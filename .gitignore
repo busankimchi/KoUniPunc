@@ -1,3 +1,23 @@
 .DS_Store
 
-/data
+data/base/
+
+pretrained_models/
+
+New_Sample*/
+
+sample_data*/
+
+__pycache__/
+
+archive/
+
+model/
+preds/
+archive/
+report/
+examples/
+
+cached*
+sample_pred_out.txt
+sample_pred_punc_out.txt

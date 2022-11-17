@@ -1,4 +1,3 @@
-
 class ArchitectureRegister(object):
     def __init__(self):
         self.caches = {}
@@ -10,6 +9,7 @@ class ArchitectureRegister(object):
         def _register_x_cls(f):
             self.caches[name] = (cls, f)
             return f
+
         return _register_x_cls
 
     def choices(self):
@@ -27,7 +27,6 @@ class ArchitectureRegister(object):
 pretrain_model_register = ArchitectureRegister()
 header_register = ArchitectureRegister()
 duration_header_register = ArchitectureRegister()
-
 
 
 # This line should be after all others
