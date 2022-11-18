@@ -1,3 +1,6 @@
+"""
+Utils for training and models
+"""
 from typing import Tuple, Dict, Literal
 from dataclasses import dataclass
 import os
@@ -5,7 +8,6 @@ import re
 import random
 import logging
 
-import gdown
 import torch
 from torch import Tensor
 import numpy as np
@@ -41,9 +43,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PredictResult:
-    predict_result: Tensor      # B x T
-    predict_logit:Tensor        # B x T x C
-    
+    predict_result: Tensor  # B x T
+    predict_logit: Tensor  # B x T x C
+
 
 # VIRTUAL_EMB_LEN = 1
 W2V_DIM = 768
@@ -69,10 +71,10 @@ LM_MODEL_PATH_MAP = {
     "koelectra-small": "monologg/koelectra-small-discriminator",
 }
 
-SMModelClassType = Tuple[PretrainedConfig, PreTrainedModel, SequenceFeatureExtractor]
+SMModelClassType = Tuple[PretrainedConfig, SequenceFeatureExtractor]
 
 SM_MODEL_CLASSES: Dict[str, SMModelClassType] = {
-    "wav2vec2_large_korean": (Wav2Vec2Config, Wav2Vec2ForCTC, Wav2Vec2FeatureExtractor)
+    "wav2vec2_large_korean": (Wav2Vec2Config, Wav2Vec2FeatureExtractor)
 }
 
 SM_MODEL_PATH_MAP = {"wav2vec2_large_korean": "kresnik/wav2vec2-large-xlsr-korean"}

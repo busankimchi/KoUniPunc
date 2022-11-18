@@ -55,9 +55,9 @@ class InputFeatures:
     text_label_ids: list
     text_token_type_ids: Optional[list] = None
 
-    audio_input_values: Optional[Tensor] = None
-    audio_attention_mask: Optional[Tensor] = None
-    audio_feature_lengths: Optional[int] = None
+    audio_input: Optional[list] = None
+    audio_length: Optional[int] = None
+    audio_sampling_rate: Optional[int] = None
     has_audio: bool = False
 
 
@@ -202,37 +202,19 @@ def convert_to_text_features(
     return tokens, input_ids, attention_mask, token_type_ids, label_ids
 
 
-def convert_to_audio_features(
-    example: InputExample, feature_extractor: SequenceFeatureExtractor, mask_wav: bool
-):
-    # TODO: feature_extractor 제거, 모델에서 시행하는 걸로 변경
-
+def convert_to_audio_features(example: InputExample):
     if example.audio_path is None:
-        return None, None, None, False
+        return None, None, False
 
     speech_array, sampling_rate = torchaudio.load(example.audio_path)
-
-    res = feature_extractor(
-        speech_array, sampling_rate=sampling_rate, return_tensors="pt", padding=True
-    )
-
-    input_values = res.input_values.squeeze()
-    audio_feature_lengths = input_values.size()[0]
-    attention_mask = res.attention_mask
-
-    logger.info(f"AUDIO VAL : {input_values.size()} :: {input_values}")
-    logger.info(f"ATT MASK : {attention_mask.size()} :: {attention_mask}")
-
-    return input_values, attention_mask, audio_feature_lengths, True
+    speech_array_length = speech_array.size()[0]
+    return speech_array, speech_array_length, sampling_rate, True
 
 
 def convert_examples_to_features(
     args, examples: List[InputExample]
 ) -> List[InputFeatures]:
     tokenizer = load_tokenizer(args)
-    feature_extractor = load_feature_extractor(args)
-
-    mask_wav = args.wav_mask_prob != 0
 
     features = []
     progress = tqdm(examples, desc="Example Convert")
@@ -246,11 +228,11 @@ def convert_examples_to_features(
         ) = convert_to_text_features(example, tokenizer, args.max_seq_len)
 
         (
-            audio_input_values,
-            audio_att_mask,
-            audio_feature_lengths,
+            audio_input,
+            audio_length,
+            sampling_rate,
             has_audio,
-        ) = convert_to_audio_features(example, feature_extractor, mask_wav)
+        ) = convert_to_audio_features(example)
 
         if ex_idx < 5:
             logger.info("*** Example ***")
@@ -269,14 +251,10 @@ def convert_examples_to_features(
             logger.info(
                 "text_label_ids: %s" % " ".join([str(x) for x in text_label_ids])
             )
-            # logger.info(
-            #     "audio_input_values: %s"
-            #     % " ".join([str(x) for x in audio_input_values])
-            # )
-            logger.info(
-                "audio_att_mask: %s" % " ".join([str(x) for x in audio_att_mask])
-            )
-            logger.info("audio_feature_lengths: %s" % audio_feature_lengths)
+
+            logger.info("audio_input: %s" % " ".join([str(x) for x in audio_input]))
+            logger.info("audio_length: %s" % audio_length)
+            logger.info("sampling_rate: %s" % sampling_rate)
 
         features.append(
             InputFeatures(
@@ -284,9 +262,9 @@ def convert_examples_to_features(
                 text_attention_mask=text_att_mask,
                 text_token_type_ids=text_token_type_ids,
                 text_label_ids=text_label_ids,
-                audio_input_values=audio_input_values,
-                audio_attention_mask=audio_att_mask,
-                audio_feature_lengths=audio_feature_lengths,
+                audio_input=audio_input,
+                audio_length=audio_length,
+                sampling_rate=sampling_rate,
                 has_audio=has_audio,
             )
         )
@@ -336,14 +314,12 @@ def load_and_cache_examples(args, mode: str):
     all_text_label_ids = torch.tensor(
         [f.text_label_ids for f in features], dtype=torch.long
     )
-    all_audio_input_values = torch.tensor(
-        [f.audio_input_values for f in features], dtype=torch.long
-    )
-    all_audio_attention_mask = torch.tensor(
-        [f.audio_attention_mask for f in features], dtype=torch.long
-    )
+    all_audio_input = torch.tensor([f.audio_input for f in features], dtype=torch.long)
     all_audio_length = torch.tensor(
-        [f.audio_feature_lengths for f in features], dtype=torch.long
+        [f.audio_length for f in features], dtype=torch.long
+    )
+    all_audio_sampling_rate = torch.tensor(
+        [f.audio_sampling_rate for f in features], dtype=torch.long
     )
     all_has_audio = torch.tensor([f.has_audio for f in features], dtype=torch.long)
 
@@ -356,13 +332,11 @@ def load_and_cache_examples(args, mode: str):
     )
     logger.info("all_text_label_ids.size(): {}".format(all_text_label_ids.size()))
 
-    logger.info(
-        "all_audio_input_values.size(): {}".format(all_audio_input_values.size())
-    )
-    logger.info(
-        "all_audio_attention_mask.size(): {}".format(all_audio_attention_mask.size())
-    )
+    logger.info("all_audio_input.size(): {}".format(all_audio_input.size()))
     logger.info("all_audio_length.size(): {}".format(all_audio_length.size()))
+    logger.info(
+        "all_audio_sampling_rate.size(): {}".format(all_audio_sampling_rate.size())
+    )
     logger.info("all_has_audio.size(): {}".format(all_has_audio.size()))
 
     dataset = TensorDataset(
@@ -370,9 +344,9 @@ def load_and_cache_examples(args, mode: str):
         all_text_attention_mask,
         all_text_token_type_ids,
         all_text_label_ids,
-        all_audio_input_values,
-        all_audio_attention_mask,
+        all_audio_input,
         all_audio_length,
+        all_audio_sampling_rate,
         all_has_audio,
     )
 

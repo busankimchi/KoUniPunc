@@ -1,3 +1,6 @@
+"""
+Data aggregator to process multiple data files
+"""
 import os
 import re
 import argparse
