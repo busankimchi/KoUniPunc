@@ -61,7 +61,7 @@ def process_files(paths: list):
             metadata = data["info"][0]["metadata"]
 
             # print(f"before : {audio_path}")
-            audio_path = re.sub("^Y:", "./data/sample_data", audio_path)
+            audio_path = re.sub("^Y:", "/mnt/data_storage/sample_data", audio_path)
             audio_path = re.sub("03.원천데이터", "원천데이터", audio_path)
             audio_path = re.sub("01.대학병원", "TS1_01.대학병원/01.대학병원", audio_path)
             audio_path = re.sub("\\\\", "/", audio_path)
@@ -114,19 +114,19 @@ if __name__ == "__main__":
     """Paths"""
     parser.add_argument(
         "--label_data_dir",
-        default="./data/sample_data/라벨링데이터",
+        default="/mnt/data_storage/sample_data/라벨링데이터",
         type=str,
         help="The label data dir",
     )
     parser.add_argument(
         "--origin_data_dir",
-        default="./data/sample_data/원천데이터",
+        default="/mnt/data_storage/sample_data/원천데이터",
         type=str,
         help="The origin data dir",
     )
     parser.add_argument(
         "--output_dir",
-        default="./data/sample_data",
+        default="/mnt/data_storage/sample_data",
         type=str,
         help="The aggregated data dir",
     )

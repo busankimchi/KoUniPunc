@@ -1,9 +1,12 @@
-from typing import List
+from typing import List, Optional
+import logging
 
-import torch
 from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
+
+
+logger = logging.getLogger(__name__)
 
 
 class Conv1dSubsampler(nn.Module):
@@ -23,7 +26,7 @@ class Conv1dSubsampler(nn.Module):
         in_channels: int,
         mid_channels: int,
         out_channels: int,
-        kernel_sizes: List[int] = (3, 3),
+        kernel_sizes: List[int] = [3, 3],
     ):
         super(Conv1dSubsampler, self).__init__()
 
@@ -39,7 +42,7 @@ class Conv1dSubsampler(nn.Module):
             for i, k in enumerate(kernel_sizes)
         )
 
-    def get_out_seq_lens_tensor(self, in_seq_lens_tensor: Tensor):
+    def _get_out_seq_lens_tensor(self, in_seq_lens_tensor: Tensor) -> Optional[Tensor]:
         if in_seq_lens_tensor is None:
             return None
 
@@ -51,13 +54,21 @@ class Conv1dSubsampler(nn.Module):
 
     def forward(self, src_tokens: Tensor, src_lengths: Tensor):
         bsz, in_seq_len, _ = src_tokens.size()  # B x T x (C x D)
+
+        # logger.info(f"IN CONV :: INPUT :: {src_tokens.size()}")
+
         x = src_tokens.transpose(1, 2).contiguous()  # -> B x (C x D) x T
+
+        # logger.info(f"IN CONV :: X :: {x.size()}")
 
         for conv in self.conv_layers:
             x = conv(x)
             x = F.glu(x, dim=1)
 
         _, _, out_seq_len = x.size()
-        x = x.transpose(1, 2).transpose(0, 1).contiguous()  # -> T x B x (C x D)
+        # x = x.transpose(1, 2).transpose(0, 1).contiguous()  # -> T x B x (C x D)
+        x = x.transpose(1, 2).contiguous()  # -> B x T x (C x D)
 
-        return x, self.get_out_seq_lens_tensor(src_lengths)
+        # logger.info(f"IN CONV :: X AFTER CONV :: {x.size()}")
+
+        return x, self._get_out_seq_lens_tensor(src_lengths)

@@ -34,14 +34,13 @@ class Trainer(object):
         self.dev_dataset = dev_dataset
         self.test_dataset = test_dataset
 
+        self.device = get_device(args)
         self.label_lst = PUNCTUATION_LABELS
 
         # Use cross entropy ignore index as padding label id so that only real label ids contribute to the loss later
         self.pad_token_label_id = torch.nn.CrossEntropyLoss().ignore_index
 
-        self.model = KoUniPunc(args, self.label_lst)
-
-        self.device = get_device(args)
+        self.model = KoUniPunc(args)
         self.model.to(self.device)
 
         self.test_texts = None
@@ -97,7 +96,7 @@ class Trainer(object):
         # TODO: learning rate scheduler with NOAM, warm-up step 8000
         scheduler = get_linear_schedule_with_warmup(
             optimizer,
-            num_warmup_steps=int(t_total * self.args.warmup_proportion),
+            num_warmup_steps=self.args.warmup_steps,
             num_training_steps=t_total,
         )
 
@@ -110,6 +109,7 @@ class Trainer(object):
         )
         logger.info("  Total optimization steps = %d", t_total)
         logger.info("  Logging steps = %d", self.args.logging_steps)
+        logger.info("  Save steps = %d", self.args.save_steps)
 
         return optimizer, scheduler
 
@@ -133,17 +133,19 @@ class Trainer(object):
             epoch_iterator = tqdm(train_dataloader, desc="Iteration")
             for step, batch in enumerate(epoch_iterator):
                 self.model.train()
-                batch = tuple(t.to(self.device) for t in batch)  # GPU or CPU
-                
+                batch = tuple(t.to(self.device) for t in batch)
+
+                # logger.info(f"BATCH :: {batch}")
+
                 inputs = {
                     "text_input_ids": batch[0],
                     "text_attention_mask": batch[1],
-                    "text_label_ids": batch[2],
-                    "text_token_type_ids": batch[3],
-                    "audio_input_values": batch[4],
-                    "audio_attention_mask": batch[5],
-                    "audio_feature_lengths": batch[6],
-                    "has_audio": batch[7],
+                    "text_token_type_ids": batch[2],
+                    "labels": batch[3],
+                    "text_length": batch[4],
+                    "audio_input": batch[5],
+                    "audio_length": batch[6],
+                    "has_audio": batch[7][0],
                 }
                 outputs = self.model(**inputs)
                 loss: Tensor = outputs[0]
@@ -152,8 +154,8 @@ class Trainer(object):
                     loss = loss / self.args.gradient_accumulation_steps
 
                 loss.backward()
-
                 tr_loss += loss.item()
+
                 if (step + 1) % self.args.gradient_accumulation_steps == 0:
                     torch.nn.utils.clip_grad_norm_(
                         self.model.parameters(), self.args.max_grad_norm
@@ -202,6 +204,7 @@ class Trainer(object):
         logger.info("***** Running evaluation on %s dataset *****", mode)
         logger.info("  Num examples = %d", len(dataset))
         logger.info("  Batch size = %d", self.args.eval_batch_size)
+
         eval_loss = 0.0
         nb_eval_steps = 0
         preds = None
@@ -210,20 +213,21 @@ class Trainer(object):
         self.model.eval()
         for batch in tqdm(eval_dataloader, desc="Evaluating"):
             batch = tuple(t.to(self.device) for t in batch)
-            
+
             with torch.no_grad():
                 inputs = {
                     "text_input_ids": batch[0],
                     "text_attention_mask": batch[1],
-                    "text_label_ids": batch[2],
-                    "text_token_type_ids": batch[3],
-                    "audio_input_values": batch[4],
-                    "audio_attention_mask": batch[5],
-                    "audio_feature_lengths": batch[6],
-                    "has_audio": batch[7],
+                    "text_token_type_ids": batch[2],
+                    "labels": batch[3],
+                    "text_length": batch[4],
+                    "audio_input": batch[5],
+                    "audio_length": batch[6],
+                    "has_audio": batch[7][0],
                 }
-                outputs = self.model(**inputs)    
-                tmp_eval_loss, logits: Tensor = outputs[:2]
+                outputs = self.model(**inputs)
+                # outputs = self.model(**inputs).tolist()
+                tmp_eval_loss, logits = outputs[:2]
 
                 eval_loss += tmp_eval_loss.mean().item()
 
@@ -236,7 +240,9 @@ class Trainer(object):
             else:
                 preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
                 out_label_ids = np.append(
-                    out_label_ids, inputs["labels"].detach().cpu().numpy(), axis=0
+                    out_label_ids,
+                    inputs["labels"].detach().cpu().numpy(),
+                    axis=0,
                 )
 
         eval_loss = eval_loss / nb_eval_steps
@@ -299,10 +305,16 @@ class Trainer(object):
         if not os.path.exists(self.args.model_dir):
             os.makedirs(self.args.model_dir)
 
-        model_to_save = (
-            self.model.module if hasattr(self.model, "module") else self.model
+        # model_to_save = (
+        #     self.model.module if hasattr(self.model, "module") else self.model
+        # )
+        # model_to_save.save_pretrained(self.args.model_dir)
+
+        # save model
+        torch.save(
+            self.model.state_dict(),
+            os.path.join(self.args.model_dir, "kounipunc_state.pt"),
         )
-        model_to_save.save_pretrained(self.args.model_dir)
 
         # Save training arguments together with the trained model
         torch.save(self.args, os.path.join(self.args.model_dir, "training_args.bin"))
@@ -314,9 +326,13 @@ class Trainer(object):
             raise Exception("Model doesn't exists! Train first!")
 
         try:
-            # TODO: 수정 필요
-            self.model = self.model_class.from_pretrained(self.args.model_dir)
+            # self.model = self.model_class.from_pretrained(self.args.model_dir)
+            state_dict = torch.load(
+                os.path.join(self.args.model_dir, "kounipunc_state.pt")
+            )
+            self.model.load_state_dict(state_dict)
             self.model.to(self.device)
             logger.info("***** Model Loaded *****")
+
         except:
             raise Exception("Some model files might be missing...")

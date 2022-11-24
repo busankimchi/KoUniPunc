@@ -6,17 +6,15 @@ pretrained_models/
 
 New_Sample*/
 
-sample_data*/
-
 __pycache__/
 
-archive/
-
 preds/
-archive/
 report/
 examples/
 
 cached*
 sample_pred_out.txt
 sample_pred_punc_out.txt
+
+
+archive/

@@ -1,126 +1,21 @@
 """
 Data loader that gets preprocessed data
 """
-from dataclasses import dataclass, field
-from typing import List, Literal, Optional
 import os
 import logging
+from typing import List
 
-# import jsonlines
-import json
-import jsonlines
 from tqdm import tqdm
-from transformers.tokenization_utils import PreTrainedTokenizer
-from transformers.feature_extraction_sequence_utils import SequenceFeatureExtractor
 
 import torch
-from torch import Tensor
-import torchaudio
 from torch.utils.data import TensorDataset
+import torchaudio
+from transformers.tokenization_utils import PreTrainedTokenizer
 
-from .utils import InputExampleJSON
-from ..utils import (
-    PUNCTUATION_LABELS,
-    lengths_to_padding_mask,
-    load_feature_extractor,
-    load_tokenizer,
-)
+from ..utils import load_tokenizer
+from .welfare_call import InputExample, InputFeature, WelfareCallDatasetProcessor
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class InputExample:
-    """
-    A single training/test example for simple sequence classification.
-
-    Args:
-        guid: Unique id for the example.
-        words: list. The words of the sequence.
-        labels: (Optional) list. The slot labels of the example.
-    """
-
-    guid: str
-    words: List[str] = field(default_factory=list)
-    labels: List[str] = field(default_factory=list)
-    audio_path: Optional[str] = None
-
-
-@dataclass
-class InputFeatures:
-    """A single set of features of data."""
-
-    text_input_ids: list
-    text_attention_mask: list
-    text_label_ids: list
-    text_token_type_ids: Optional[list] = None
-
-    audio_input: Optional[list] = None
-    audio_length: Optional[int] = None
-    audio_sampling_rate: Optional[int] = None
-    has_audio: bool = False
-
-
-class WelfareCallDatasetProcessor(object):
-    """Processor for welfare call data set"""
-
-    def __init__(self, args):
-        self.args = args
-        self.labels_lst = PUNCTUATION_LABELS
-
-    @classmethod
-    def _read_file(cls, input_file: str) -> List[InputExampleJSON]:
-        """Read jsonl file, and return words and label as list"""
-        with jsonlines.open(input_file) as f:
-            lines: List[InputExampleJSON] = []
-            for line in f.iter():
-                lines.append(InputExampleJSON(**line))
-            return lines
-
-    def _create_examples(
-        self, dataset: List[InputExampleJSON], set_type: str
-    ) -> List[InputExample]:
-        """Creates examples for the training and dev sets."""
-        examples: List[InputExample] = []
-        for i, data in enumerate(dataset):
-            words = data.text.split()
-            labels = data.label.split()
-
-            labels_idx = [
-                self.labels_lst.index(label)
-                if label in self.labels_lst
-                else self.labels_lst.index("UNK")
-                for label in labels
-            ]
-
-            assert len(words) == len(labels_idx)
-
-            example = {
-                "guid": f"{set_type}-{i}",
-                "words": words,
-                "labels": labels_idx,
-                "audio_path": data.audio_path,
-            }
-
-            if i % 10000 == 0:
-                logger.info(f"CREATING :: EX :: {data}")
-
-            examples.append(InputExample(**example))
-
-        return examples
-
-    def get_examples(self, mode: Literal["train", "dev", "test"]) -> List[InputExample]:
-        file_map = {
-            "train": self.args.train_file,
-            "dev": self.args.dev_file,
-            "test": self.args.test_file,
-        }
-
-        example_file_path = os.path.join(self.args.data_dir, file_map[mode])
-        logger.info("LOOKING AT {}".format(example_file_path))
-
-        return self._create_examples(self._read_file(example_file_path), mode)
-
 
 processors = {"wfc-ko-punc": WelfareCallDatasetProcessor}
 
@@ -142,7 +37,7 @@ def convert_to_text_features(
     unk_token = tokenizer.unk_token
     pad_token_id = tokenizer.pad_token_id
 
-    # Tokenize word by word (for NER)
+    # Tokenize word by word (for Token Classification)
     tokens = []
     label_ids = []
     for word, slot_label in zip(example.words, example.labels):
@@ -172,13 +67,14 @@ def convert_to_text_features(
     token_type_ids = [cls_token_segment_id] + token_type_ids
 
     input_ids = tokenizer.convert_tokens_to_ids(tokens)
+    org_text_length = len(input_ids)
 
     # The mask has 1 for real tokens and 0 for padding tokens. Only real
     # tokens are attended to.
-    attention_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
+    attention_mask = [1 if mask_padding_with_zero else 0] * org_text_length
 
     # Zero-pad up to the sequence length.
-    padding_length = max_seq_len - len(input_ids)
+    padding_length = max_seq_len - org_text_length
     input_ids = input_ids + ([pad_token_id] * padding_length)
     attention_mask = attention_mask + (
         [0 if mask_padding_with_zero else 1] * padding_length
@@ -199,24 +95,40 @@ def convert_to_text_features(
         len(label_ids) == max_seq_len
     ), f"Error with slot labels length {len(label_ids)} vs {max_seq_len}"
 
-    return tokens, input_ids, attention_mask, token_type_ids, label_ids
+    return tokens, input_ids, attention_mask, token_type_ids, label_ids, org_text_length
 
 
-def convert_to_audio_features(example: InputExample):
+def convert_to_audio_features(
+    example: InputExample, max_aud_len: int, wav_sampling_rate: int
+):
     if example.audio_path is None:
         return None, None, False
 
     speech_array, sampling_rate = torchaudio.load(example.audio_path)
-    speech_array_length = speech_array.size()[0]
-    return speech_array, speech_array_length, sampling_rate, True
+
+    if wav_sampling_rate != sampling_rate:
+        speech_array = torchaudio.functional.resample(
+            speech_array, orig_freq=sampling_rate, new_freq=wav_sampling_rate
+        )
+
+    audio_input = speech_array[0].tolist()
+    speech_array_length = len(audio_input)
+
+    padding_length = max_aud_len - speech_array_length
+
+    if padding_length > 0:
+        audio_input = audio_input + ([0] * padding_length)
+
+    return audio_input, speech_array_length, True
 
 
 def convert_examples_to_features(
     args, examples: List[InputExample]
-) -> List[InputFeatures]:
+) -> List[InputFeature]:
     tokenizer = load_tokenizer(args)
 
     features = []
+
     progress = tqdm(examples, desc="Example Convert")
     for ex_idx, example in enumerate(progress):
         (
@@ -224,15 +136,13 @@ def convert_examples_to_features(
             text_input_ids,
             text_att_mask,
             text_token_type_ids,
-            text_label_ids,
+            labels,
+            text_length,
         ) = convert_to_text_features(example, tokenizer, args.max_seq_len)
 
-        (
-            audio_input,
-            audio_length,
-            sampling_rate,
-            has_audio,
-        ) = convert_to_audio_features(example)
+        (audio_input, audio_length, has_audio,) = convert_to_audio_features(
+            example, args.max_audio_time, args.wav_sampling_rate
+        )
 
         if ex_idx < 5:
             logger.info("*** Example ***")
@@ -248,28 +158,25 @@ def convert_examples_to_features(
                 "text_token_type_ids: %s"
                 % " ".join([str(x) for x in text_token_type_ids])
             )
-            logger.info(
-                "text_label_ids: %s" % " ".join([str(x) for x in text_label_ids])
-            )
+            logger.info("labels: %s" % " ".join([str(x) for x in labels]))
+            logger.info("text_length: %s" % text_length)
 
-            logger.info("audio_input: %s" % " ".join([str(x) for x in audio_input]))
+            # logger.info("audio_input: %s" % " ".join([str(x) for x in audio_input]))
             logger.info("audio_length: %s" % audio_length)
-            logger.info("sampling_rate: %s" % sampling_rate)
 
         features.append(
-            InputFeatures(
+            InputFeature(
                 text_input_ids=text_input_ids,
                 text_attention_mask=text_att_mask,
                 text_token_type_ids=text_token_type_ids,
-                text_label_ids=text_label_ids,
+                labels=labels,
+                text_length=text_length,
                 audio_input=audio_input,
                 audio_length=audio_length,
-                sampling_rate=sampling_rate,
                 has_audio=has_audio,
             )
         )
 
-    assert False
     return features
 
 
@@ -305,48 +212,49 @@ def load_and_cache_examples(args, mode: str):
     all_text_input_ids = torch.tensor(
         [f.text_input_ids for f in features], dtype=torch.long
     )
+    logger.info("all_text_input_ids.size(): {}".format(all_text_input_ids.size()))
+
     all_text_attention_mask = torch.tensor(
         [f.text_attention_mask for f in features], dtype=torch.long
     )
-    all_text_token_type_ids = torch.tensor(
-        [f.text_token_type_ids for f in features], dtype=torch.long
-    )
-    all_text_label_ids = torch.tensor(
-        [f.text_label_ids for f in features], dtype=torch.long
-    )
-    all_audio_input = torch.tensor([f.audio_input for f in features], dtype=torch.long)
-    all_audio_length = torch.tensor(
-        [f.audio_length for f in features], dtype=torch.long
-    )
-    all_audio_sampling_rate = torch.tensor(
-        [f.audio_sampling_rate for f in features], dtype=torch.long
-    )
-    all_has_audio = torch.tensor([f.has_audio for f in features], dtype=torch.long)
-
-    logger.info("all_text_input_ids.size(): {}".format(all_text_input_ids.size()))
     logger.info(
         "all_text_attention_mask.size(): {}".format(all_text_attention_mask.size())
+    )
+
+    all_text_token_type_ids = torch.tensor(
+        [f.text_token_type_ids for f in features], dtype=torch.long
     )
     logger.info(
         "all_text_token_type_ids.size(): {}".format(all_text_token_type_ids.size())
     )
-    logger.info("all_text_label_ids.size(): {}".format(all_text_label_ids.size()))
 
-    logger.info("all_audio_input.size(): {}".format(all_audio_input.size()))
-    logger.info("all_audio_length.size(): {}".format(all_audio_length.size()))
-    logger.info(
-        "all_audio_sampling_rate.size(): {}".format(all_audio_sampling_rate.size())
+    all_labels = torch.tensor([f.labels for f in features], dtype=torch.long)
+    logger.info("all_labels.size(): {}".format(all_labels.size()))
+
+    all_text_length = torch.tensor([f.text_length for f in features], dtype=torch.long)
+    logger.info("all_text_length.size(): {}".format(all_text_length.size()))
+
+    all_audio_input = torch.tensor(
+        [f.audio_input for f in features], dtype=torch.float32
     )
+    logger.info("all_audio_input.size(): {}".format(all_audio_input.size()))
+
+    all_audio_length = torch.tensor(
+        [f.audio_length for f in features], dtype=torch.long
+    )
+    logger.info("all_audio_length.size(): {}".format(all_audio_length.size()))
+
+    all_has_audio = torch.tensor([f.has_audio for f in features], dtype=torch.bool)
     logger.info("all_has_audio.size(): {}".format(all_has_audio.size()))
 
     dataset = TensorDataset(
         all_text_input_ids,
         all_text_attention_mask,
         all_text_token_type_ids,
-        all_text_label_ids,
+        all_labels,
+        all_text_length,
         all_audio_input,
         all_audio_length,
-        all_audio_sampling_rate,
         all_has_audio,
     )
 

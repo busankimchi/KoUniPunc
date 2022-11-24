@@ -5,8 +5,8 @@ import os
 import logging
 
 import torch
-from transformers import AutoModelForTokenClassification
 
+from ..model.ko_unipunc import KoUniPunc
 from ..utils import REVERSE_PUNCTUATIONS
 
 
@@ -24,10 +24,17 @@ def load_model(pred_config, args, device):
 
     try:
         # Config will be automatically loaded from model_dir
-        model = AutoModelForTokenClassification.from_pretrained(args.model_dir)
+        model = KoUniPunc(args)
+
+        state_dict = torch.load(
+            os.path.join(pred_config.model_dir, "kounipunc_state.pt")
+        )
+        model.load_state_dict(state_dict)
+
         model.to(device)
         model.eval()
         logger.info("***** Model Loaded *****")
+
     except:
         raise Exception("Some model files might be missing...")
 
@@ -37,6 +44,7 @@ def load_model(pred_config, args, device):
 def read_input_file(pred_config):
     lines = []
     audio_paths = []
+    # TODO: 파일 읽기 수정
     with open(pred_config.input_file, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()

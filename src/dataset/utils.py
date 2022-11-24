@@ -5,7 +5,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-from soynlp.normalizer import emoticon_normalize, repeat_normalize
+# from soynlp.normalizer import emoticon_normalize, repeat_normalize
 
 from ..utils import PUNCTUATIONS
 

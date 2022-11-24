@@ -1,12 +1,13 @@
 """
 Utils for training and models
 """
-from typing import Tuple, Dict, Literal
+from typing import Tuple, Dict, Literal, List
 from dataclasses import dataclass
 import os
-import re
 import random
 import logging
+
+import jsonlines
 
 import torch
 from torch import Tensor
@@ -19,7 +20,6 @@ from seqeval.metrics import (
 )
 
 from transformers import (
-    AutoModelForTokenClassification,
     BertConfig,
     DistilBertConfig,
     ElectraConfig,
@@ -29,12 +29,15 @@ from transformers import (
     DistilBertModel,
     ElectraModel,
     Wav2Vec2Config,
-    Wav2Vec2ForCTC,
-    Wav2Vec2FeatureExtractor,
+    Wav2Vec2Model,
+    # Wav2Vec2FeatureExtractor,
+    Wav2Vec2Processor,
+    Wav2Vec2PreTrainedModel,
 )
 from transformers.modeling_utils import PretrainedConfig, PreTrainedModel
 from transformers.tokenization_utils import PreTrainedTokenizer
-from transformers.feature_extraction_sequence_utils import SequenceFeatureExtractor
+
+# from transformers.feature_extraction_sequence_utils import SequenceFeatureExtractor
 
 from .tokenization_kobert import KoBertTokenizer
 
@@ -71,11 +74,14 @@ LM_MODEL_PATH_MAP = {
     "koelectra-small": "monologg/koelectra-small-discriminator",
 }
 
-SMModelClassType = Tuple[PretrainedConfig, SequenceFeatureExtractor]
+# SMModelClassType = Tuple[PretrainedConfig, SequenceFeatureExtractor, Wav2Vec2PreTrainedModel]
+SMModelClassType = Tuple[PretrainedConfig, Wav2Vec2Processor, Wav2Vec2PreTrainedModel]
 
 SM_MODEL_CLASSES: Dict[str, SMModelClassType] = {
-    "wav2vec2_large_korean": (Wav2Vec2Config, Wav2Vec2FeatureExtractor)
+    # "wav2vec2_large_korean": (Wav2Vec2Config, Wav2Vec2FeatureExtractor, Wav2Vec2Model)
+    "wav2vec2_large_korean": (Wav2Vec2Config, Wav2Vec2Processor, Wav2Vec2Model)
 }
+
 
 SM_MODEL_PATH_MAP = {"wav2vec2_large_korean": "kresnik/wav2vec2-large-xlsr-korean"}
 
@@ -88,10 +94,9 @@ def get_eval_texts(args, mode: Literal["dev", "test"] = "dev"):
     file_map = {"dev": args.dev_file, "test": args.test_file}
 
     texts = []
-    with open(os.path.join(args.data_dir, file_map[mode]), "r", encoding="utf-8") as f:
-        for line in f:
-            text, _ = line.split("\t")
-            text = text.split()
+    with jsonlines.open(os.path.join(args.data_dir, file_map[mode])) as f:
+        for line in f.iter():
+            text = line["text"].split()
             texts.append(text)
 
     return texts
@@ -100,10 +105,6 @@ def get_eval_texts(args, mode: Literal["dev", "test"] = "dev"):
 def get_device(args):
     # GPU or CPU
     return "cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu"
-
-
-def get_args(pred_config):
-    return torch.load(os.path.join(pred_config.model_dir, "training_args.bin"))
 
 
 def load_tokenizer(args):
@@ -116,24 +117,6 @@ def load_feature_extractor(args):
     return SM_MODEL_CLASSES[args.sm_model_type][2].from_pretrained(
         args.sm_model_name_or_path
     )
-
-
-def load_model(pred_config, args, device):
-    # Check whether model exists
-    if not os.path.exists(pred_config.model_dir):
-        raise Exception("Model doesn't exists! Train first!")
-
-    try:
-        model = AutoModelForTokenClassification.from_pretrained(
-            args.model_dir
-        )  # Config will be automatically loaded from model_dir
-        model.to(device)
-        model.eval()
-        logger.info("***** Model Loaded *****")
-    except:
-        raise Exception("Some model files might be missing...")
-
-    return model
 
 
 def init_logger():

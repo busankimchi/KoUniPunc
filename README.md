@@ -37,21 +37,14 @@ fairseq-train \
 python3 -m src.dataset.data_aggregation
 ```
 
-# Data loading
-
-```
-python3 -m src.train.main
-```
-
 # Finetune
 
 ```
-
-
+python3 -m src.train.main --do_train --do_eval --write_pred
 ```
 
 # Inference
 
 ```
-
+python3 -m src.inference.main
 ```

@@ -1,7 +1,6 @@
 """
 Prediction Entry file
 """
-import os
 import logging
 import argparse
 from tqdm import tqdm
@@ -14,15 +13,9 @@ from torch.utils.data import TensorDataset, DataLoader, SequentialSampler
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.feature_extraction_sequence_utils import SequenceFeatureExtractor
 
-from .utils import (
-    get_args,
-    load_model,
-    read_input_file,
-    save_output_file,
-)
+from .utils import get_args, load_model, read_input_file, save_output_file
 from ..utils import (
     init_logger,
-    load_feature_extractor,
     load_tokenizer,
     get_device,
     PUNCTUATION_LABELS,
@@ -36,7 +29,7 @@ def convert_text_to_tensor_dataset(
     pred_config,
     args,
     tokenizer: PreTrainedTokenizer,
-    pad_token_label_id,
+    pad_token_label_id: int,
     cls_token_segment_id=0,
     pad_token_segment_id=0,
     sequence_a_segment_id=0,
@@ -53,6 +46,7 @@ def convert_text_to_tensor_dataset(
     all_attention_mask = []
     all_token_type_ids = []
     all_slot_label_mask = []
+    all_text_length = []
 
     for words in lines:
         tokens = []
@@ -84,12 +78,13 @@ def convert_text_to_tensor_dataset(
         slot_label_mask = [pad_token_label_id] + slot_label_mask
 
         input_ids = tokenizer.convert_tokens_to_ids(tokens)
+        org_text_length = len(input_ids)
 
         # The mask has 1 for real tokens and 0 for padding tokens. Only real tokens are attended to.
-        attention_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
+        attention_mask = [1 if mask_padding_with_zero else 0] * org_text_length
 
         # Zero-pad up to the sequence length.
-        padding_length = args.max_seq_len - len(input_ids)
+        padding_length = args.max_seq_len - org_text_length
         input_ids = input_ids + ([pad_token_id] * padding_length)
         attention_mask = attention_mask + (
             [0 if mask_padding_with_zero else 1] * padding_length
@@ -101,93 +96,95 @@ def convert_text_to_tensor_dataset(
         all_attention_mask.append(attention_mask)
         all_token_type_ids.append(token_type_ids)
         all_slot_label_mask.append(slot_label_mask)
+        all_text_length.append(org_text_length)
 
     # Change to Tensor
     all_input_ids = torch.tensor(all_input_ids, dtype=torch.long)
     all_attention_mask = torch.tensor(all_attention_mask, dtype=torch.long)
     all_token_type_ids = torch.tensor(all_token_type_ids, dtype=torch.long)
     all_slot_label_mask = torch.tensor(all_slot_label_mask, dtype=torch.long)
+    all_text_length = torch.tensor(all_text_length, dtype=torch.long)
 
-    return all_input_ids, all_attention_mask, all_token_type_ids, all_slot_label_mask
+    return (
+        all_input_ids,
+        all_attention_mask,
+        all_token_type_ids,
+        all_slot_label_mask,
+        all_text_length,
+    )
 
 
-def convert_audio_to_tensor_dataset(
-    audio_paths, pred_config, args, feature_extractor: SequenceFeatureExtractor
-):
-    all_audio_input_values = []
-    all_audio_attention_mask = []
+def convert_audio_to_tensor_dataset(audio_paths, pred_config, args):
+    all_audio_input = []
     all_audio_length = []
     all_has_audio = []
 
     for audio_path in audio_paths:
         if audio_path is None:
-            all_audio_input_values.append(None)
-            all_audio_attention_mask.append(None)
+            all_audio_input.append(None)
             all_audio_length.append(None)
             all_has_audio.append(False)
-
             continue
 
         speech_array, sampling_rate = torchaudio.load(audio_path)
 
-        res = feature_extractor(
-            speech_array, sampling_rate=sampling_rate, return_tensors="pt", padding=True
-        )
+        if args.wav_sampling_rate != sampling_rate:
+            speech_array = torchaudio.functional.resample(
+                speech_array, orig_freq=sampling_rate, new_freq=args.wav_sampling_rate
+            )
 
-        input_values = res.input_values.squeeze()
-        audio_feature_lengths = input_values.size()[0]
-        attention_mask = res.attention_mask
+        audio_input = speech_array[0].tolist()
+        speech_array_length = len(audio_input)
 
-        all_audio_input_values.append(input_values)
-        all_audio_attention_mask.append(attention_mask)
-        all_audio_length.append(audio_feature_lengths)
+        padding_length = args.max_aud_len - speech_array_length
+
+        if padding_length > 0:
+            audio_input = audio_input + ([0] * padding_length)
+
+        all_audio_input.append(speech_array)
+        all_audio_length.append(speech_array_length)
+        all_audio_sampling_rate.append(sampling_rate)
         all_has_audio.append(True)
 
-    all_audio_input_values = torch.tensor(all_audio_input_values, dtype=torch.long)
-    all_audio_attention_mask = torch.tensor(all_audio_attention_mask, dtype=torch.long)
+    all_audio_input = torch.tensor(all_audio_input, dtype=torch.float32)
     all_audio_length = torch.tensor(all_audio_length, dtype=torch.long)
-    all_has_audio = torch.tensor(all_has_audio, dtype=torch.long)
+    all_audio_sampling_rate = torch.tensor(all_audio_length, dtype=torch.long)
+    all_has_audio = torch.tensor(all_has_audio, dtype=torch.bool)
 
-    return (
-        all_audio_input_values,
-        all_audio_attention_mask,
-        all_audio_length,
-        all_has_audio,
-    )
+    return all_audio_input, all_audio_length, all_audio_sampling_rate, all_has_audio
 
 
 def convert_input_file_to_tensor_dataset(
-    lines, audio_paths, pred_config, args, pad_token_label_id
+    lines, audio_paths, pred_config, args, pad_token_label_id: int
 ):
     tokenizer = load_tokenizer(args)
-    feature_extractor = load_feature_extractor(args)
 
     (
         all_input_ids,
         all_attention_mask,
         all_token_type_ids,
         all_slot_label_mask,
+        all_text_length,
     ) = convert_text_to_tensor_dataset(
         lines, pred_config, args, tokenizer, pad_token_label_id
     )
 
     (
-        all_audio_input_values,
-        all_audio_attention_mask,
+        all_audio_input,
         all_audio_length,
+        all_audio_sampling_rate,
         all_has_audio,
-    ) = convert_audio_to_tensor_dataset(
-        audio_paths, pred_config, args, feature_extractor
-    )
+    ) = convert_audio_to_tensor_dataset(audio_paths, pred_config, args)
 
     dataset = TensorDataset(
         all_input_ids,
         all_attention_mask,
         all_token_type_ids,
         all_slot_label_mask,
-        all_audio_input_values,
-        all_audio_attention_mask,
+        all_text_length,
+        all_audio_input,
         all_audio_length,
+        all_audio_sampling_rate,
         all_has_audio,
     )
 
@@ -200,6 +197,7 @@ def inference(pred_config):
     device = get_device(pred_config)
     model = load_model(pred_config, args, device)
     label_lst = PUNCTUATION_LABELS
+
     logger.info(args)
 
     # Convert input file to TensorDataset
@@ -225,15 +223,15 @@ def inference(pred_config):
             inputs = {
                 "text_input_ids": batch[0],
                 "text_attention_mask": batch[1],
-                "text_label_ids": batch[2],
-                "text_token_type_ids": batch[3],
-                "audio_input_values": batch[4],
-                "audio_attention_mask": batch[5],
-                "audio_feature_lengths": batch[6],
-                "has_audio": batch[7],
+                "text_token_type_ids": batch[2],
+                "labels": batch[3],
+                "text_length": batch[4],
+                "audio_input": batch[5],
+                "audio_length": batch[6],
+                "has_audio": batch[7][0],
             }
             outputs = model(**inputs)
-            logits: Tensor = outputs[0]
+            logits: Tensor = outputs[1]
 
             if preds is None:
                 preds = logits.detach().cpu().numpy()
@@ -260,6 +258,7 @@ def inference(pred_config):
 
 if __name__ == "__main__":
     init_logger()
+    
     parser = argparse.ArgumentParser()
 
     parser.add_argument(

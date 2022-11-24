@@ -19,8 +19,10 @@ def main(args):
     set_seed(args)
 
     train_dataset = load_and_cache_examples(args, mode="train")
+    # train_dataset = load_and_cache_examples(args, mode="dev")
     dev_dataset = load_and_cache_examples(args, mode="dev")
-    test_dataset = load_and_cache_examples(args, mode="test")
+    # test_dataset = load_and_cache_examples(args, mode="test")
+    test_dataset = None
 
     trainer = Trainer(args, train_dataset, dev_dataset, test_dataset)
 
@@ -42,10 +44,10 @@ if __name__ == "__main__":
 
     """Trainer"""
     parser.add_argument(
-        "--train_batch_size", default=64, type=int, help="Batch size for training"
+        "--train_batch_size", default=2, type=int, help="Batch size for training"
     )
     parser.add_argument(
-        "--eval_batch_size", default=128, type=int, help="Batch size for evaluation"
+        "--eval_batch_size", default=4, type=int, help="Batch size for evaluation"
     )
 
     """KoUniPunc"""
@@ -62,7 +64,7 @@ if __name__ == "__main__":
         type=str,
         help="Model type selected in the list: " + ", ".join(SM_MODEL_CLASSES.keys()),
     )
-    parser.add_argument("--w2v_dim", type=int, default=768, help="The w2v dim")
+    parser.add_argument("--w2v_dim", type=int, default=1024, help="The w2v dim")
 
     parser.add_argument("--dropout", type=float, default=0.1, help="The dropout rate")
     parser.add_argument(
@@ -87,6 +89,14 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--max_seq_len", default=50, type=int, help="Max sentence length"
+    )
+
+    parser.add_argument(
+        "--max_aud_len", default=480000, type=int, help="Max audio length"
+    )
+
+    parser.add_argument(
+        "--wav_sampling_rate", type=int, default=16000, help="Audio data sampling rate"
     )
 
     """Header"""
@@ -145,7 +155,10 @@ if __name__ == "__main__":
 
     """Paths"""
     parser.add_argument(
-        "--data_dir", default="./data/sample_data", type=str, help="The input data dir"
+        "--data_dir",
+        default="/mnt/data_storage/sample_data",
+        type=str,
+        help="The input data dir",
     )
     parser.add_argument(
         "--model_dir", default="./model", type=str, help="Path for saving model"
@@ -160,10 +173,6 @@ if __name__ == "__main__":
     parser.add_argument("--dev_file", default="dev.jsonl", type=str, help="Dev file")
     parser.add_argument("--test_file", default="test.jsonl", type=str, help="Test file")
 
-    # parser.add_argument(
-    #     "--label_file", default="label.txt", type=str, help="Label file"
-    # )
-
     parser.add_argument(
         "--report_as_file",
         action="store_true",
@@ -173,13 +182,44 @@ if __name__ == "__main__":
 
     """Training Parameters"""
     parser.add_argument(
-        "--learning_rate", default=0.00001, type=float, help="The initial learning rate"
-    )
-
-    parser.add_argument(
         "--seed", type=int, default=42, help="random seed for initialization"
     )
 
+    parser.add_argument(
+        "--learning_rate", default=0.00001, type=float, help="The initial learning rate"
+    )
+    parser.add_argument(
+        "--weight_decay", default=0.0, type=float, help="Weight decay if we apply some."
+    )
+    parser.add_argument(
+        "--gradient_accumulation_steps",
+        type=int,
+        default=1,
+        help="Number of updates steps to accumulate before performing a backward/update pass.",
+    )
+    parser.add_argument(
+        "--adam_epsilon", default=1e-8, type=float, help="Epsilon for Adam optimizer."
+    )
+    parser.add_argument(
+        "--max_grad_norm", default=1.0, type=float, help="Max gradient norm."
+    )
+    parser.add_argument(
+        "--max_steps",
+        default=-1,
+        type=int,
+        help="If > 0: set total number of training steps to perform. Override num_train_epochs.",
+    )
+    parser.add_argument(
+        "--warmup_steps", default=0, type=int, help="Linear warmup over warmup_steps."
+    )
+    parser.add_argument(
+        "--num_train_epochs",
+        default=15.0,
+        type=float,
+        help="Total number of training epochs to perform.",
+    )
+
+    """Training General Options"""
     parser.add_argument(
         "--logging_steps", type=int, default=1200, help="Log every X updates steps."
     )
@@ -188,13 +228,6 @@ if __name__ == "__main__":
         type=int,
         default=1200,
         help="Save checkpoint every X updates steps.",
-    )
-
-    parser.add_argument(
-        "--num_train_epochs",
-        default=15.0,
-        type=float,
-        help="Total number of training epochs to perform.",
     )
 
     parser.add_argument(
