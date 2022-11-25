@@ -11,7 +11,8 @@ import torchaudio
 from torch import Tensor
 from torch.utils.data import TensorDataset, DataLoader, SequentialSampler
 from transformers.tokenization_utils import PreTrainedTokenizer
-from transformers.feature_extraction_sequence_utils import SequenceFeatureExtractor
+
+# from transformers.feature_extraction_sequence_utils import SequenceFeatureExtractor
 
 from .utils import get_args, load_model, read_input_file, save_output_file
 from ..utils import (
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 def convert_text_to_tensor_dataset(
-    lines,
+    texts,
     pred_config,
     args,
     tokenizer: PreTrainedTokenizer,
@@ -35,7 +36,6 @@ def convert_text_to_tensor_dataset(
     sequence_a_segment_id=0,
     mask_padding_with_zero=True,
 ):
-    # TODO: 양식에 맞게 변경
     # Setting based on the current model type
     cls_token = tokenizer.cls_token
     sep_token = tokenizer.sep_token
@@ -48,7 +48,7 @@ def convert_text_to_tensor_dataset(
     all_slot_label_mask = []
     all_text_length = []
 
-    for words in lines:
+    for words in texts:
         tokens = []
         slot_label_mask = []
         for word in words:
@@ -143,19 +143,17 @@ def convert_audio_to_tensor_dataset(audio_paths, pred_config, args):
 
         all_audio_input.append(speech_array)
         all_audio_length.append(speech_array_length)
-        all_audio_sampling_rate.append(sampling_rate)
         all_has_audio.append(True)
 
     all_audio_input = torch.tensor(all_audio_input, dtype=torch.float32)
     all_audio_length = torch.tensor(all_audio_length, dtype=torch.long)
-    all_audio_sampling_rate = torch.tensor(all_audio_length, dtype=torch.long)
     all_has_audio = torch.tensor(all_has_audio, dtype=torch.bool)
 
-    return all_audio_input, all_audio_length, all_audio_sampling_rate, all_has_audio
+    return all_audio_input, all_audio_length, all_has_audio
 
 
 def convert_input_file_to_tensor_dataset(
-    lines, audio_paths, pred_config, args, pad_token_label_id: int
+    texts, audio_paths, pred_config, args, pad_token_label_id: int
 ):
     tokenizer = load_tokenizer(args)
 
@@ -166,13 +164,12 @@ def convert_input_file_to_tensor_dataset(
         all_slot_label_mask,
         all_text_length,
     ) = convert_text_to_tensor_dataset(
-        lines, pred_config, args, tokenizer, pad_token_label_id
+        texts, pred_config, args, tokenizer, pad_token_label_id
     )
 
     (
         all_audio_input,
         all_audio_length,
-        all_audio_sampling_rate,
         all_has_audio,
     ) = convert_audio_to_tensor_dataset(audio_paths, pred_config, args)
 
@@ -184,7 +181,6 @@ def convert_input_file_to_tensor_dataset(
         all_text_length,
         all_audio_input,
         all_audio_length,
-        all_audio_sampling_rate,
         all_has_audio,
     )
 
@@ -203,9 +199,9 @@ def inference(pred_config):
     # Convert input file to TensorDataset
     pad_token_label_id = torch.nn.CrossEntropyLoss().ignore_index
 
-    lines, audio_paths = read_input_file(pred_config)
+    texts, audio_paths = read_input_file(pred_config)
     dataset = convert_input_file_to_tensor_dataset(
-        lines, audio_paths, pred_config, args, pad_token_label_id
+        texts, audio_paths, pred_config, args, pad_token_label_id
     )
 
     # Predict
@@ -224,7 +220,7 @@ def inference(pred_config):
                 "text_input_ids": batch[0],
                 "text_attention_mask": batch[1],
                 "text_token_type_ids": batch[2],
-                "labels": batch[3],
+                "labels": None,
                 "text_length": batch[4],
                 "audio_input": batch[5],
                 "audio_length": batch[6],
@@ -233,17 +229,19 @@ def inference(pred_config):
             outputs = model(**inputs)
             logits: Tensor = outputs[1]
 
+            slot_label_mask: Tensor = batch[3]
+
             if preds is None:
                 preds = logits.detach().cpu().numpy()
-                all_slot_label_mask = batch[3].detach().cpu().numpy()
+                all_slot_label_mask = slot_label_mask.detach().cpu().numpy()
 
             else:
                 preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
                 all_slot_label_mask = np.append(
-                    all_slot_label_mask, batch[3].detach().cpu().numpy(), axis=0
+                    all_slot_label_mask, slot_label_mask.detach().cpu().numpy(), axis=0
                 )
 
-    preds = np.argmax(preds, axis=2)
+    preds: np.ndarray = np.argmax(preds, axis=2)
     slot_label_map = {i: label for i, label in enumerate(label_lst)}
     preds_list = [[] for _ in range(preds.shape[0])]
 
@@ -258,7 +256,7 @@ def inference(pred_config):
 
 if __name__ == "__main__":
     init_logger()
-    
+
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -267,12 +265,13 @@ if __name__ == "__main__":
         type=str,
         help="Input file for prediction",
     )
+
     parser.add_argument(
-        "--model_dir", default="./model", type=str, help="Path to save, load model"
+        "--model_ckpt_dir", default="./ckpt", type=str, help="Path to save, load model"
     )
 
     parser.add_argument(
-        "--batch_size", default=32, type=int, help="Batch size for prediction"
+        "--batch_size", default=4, type=int, help="Batch size for prediction"
     )
     parser.add_argument(
         "--no_cuda", action="store_true", help="Avoid using CUDA when available"

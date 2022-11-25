@@ -8,6 +8,7 @@ New_Sample*/
 
 __pycache__/
 
+ckpt/
 preds/
 report/
 examples/
@@ -16,5 +17,6 @@ cached*
 sample_pred_out.txt
 sample_pred_punc_out.txt
 
-
 archive/
+temp/
+test_data/

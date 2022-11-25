@@ -4,8 +4,8 @@ Training Entry file
 import argparse
 
 from .trainer import Trainer
-from ..utils import init_logger, set_seed
 from ..dataset.data_loader import load_and_cache_examples
+from ..utils import init_logger, set_seed
 from ..utils import (
     LM_MODEL_CLASSES,
     LM_MODEL_PATH_MAP,
@@ -31,7 +31,8 @@ def main(args):
 
     if args.do_eval:
         trainer.load_model()
-        trainer.evaluate("test", "eval")
+        # trainer.evaluate("test", "eval")
+        trainer.evaluate("dev", "eval")
 
 
 if __name__ == "__main__":
@@ -161,11 +162,12 @@ if __name__ == "__main__":
         help="The input data dir",
     )
     parser.add_argument(
-        "--model_dir", default="./model", type=str, help="Path for saving model"
+        "--model_ckpt_dir", default="./ckpt", type=str, help="Path for saving model"
     )
     parser.add_argument(
         "--pred_dir", default="./preds", type=str, help="The prediction file dir"
     )
+    parser.add_argument("--report_dir", default="./report", type=str, help="Report dir")
 
     parser.add_argument(
         "--train_file", default="train.jsonl", type=str, help="Train file"
@@ -178,7 +180,6 @@ if __name__ == "__main__":
         action="store_true",
         help="Whether to save prediction report as files. If false, print as stdout.",
     )
-    parser.add_argument("--report_dir", default="./report", type=str, help="Report dir")
 
     """Training Parameters"""
     parser.add_argument(

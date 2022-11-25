@@ -302,33 +302,35 @@ class Trainer(object):
 
     def save_model(self):
         # Save model checkpoint (Overwrite)
-        if not os.path.exists(self.args.model_dir):
-            os.makedirs(self.args.model_dir)
+        if not os.path.exists(self.args.model_ckpt_dir):
+            os.makedirs(self.args.model_ckpt_dir)
 
         # model_to_save = (
         #     self.model.module if hasattr(self.model, "module") else self.model
         # )
-        # model_to_save.save_pretrained(self.args.model_dir)
+        # model_to_save.save_pretrained(self.args.model_ckpt_dir)
 
         # save model
         torch.save(
             self.model.state_dict(),
-            os.path.join(self.args.model_dir, "kounipunc_state.pt"),
+            os.path.join(self.args.model_ckpt_dir, "kounipunc_state.pt"),
         )
 
         # Save training arguments together with the trained model
-        torch.save(self.args, os.path.join(self.args.model_dir, "training_args.bin"))
-        logger.info("Saving model checkpoint to %s", self.args.model_dir)
+        torch.save(
+            self.args, os.path.join(self.args.model_ckpt_dir, "training_args.bin")
+        )
+        logger.info("Saving model checkpoint to %s", self.args.model_ckpt_dir)
 
     def load_model(self):
         # Check whether model exists
-        if not os.path.exists(self.args.model_dir):
+        if not os.path.exists(self.args.model_ckpt_dir):
             raise Exception("Model doesn't exists! Train first!")
 
         try:
-            # self.model = self.model_class.from_pretrained(self.args.model_dir)
+            # self.model = self.model_class.from_pretrained(self.args.model_ckpt_dir)
             state_dict = torch.load(
-                os.path.join(self.args.model_dir, "kounipunc_state.pt")
+                os.path.join(self.args.model_ckpt_dir, "kounipunc_state.pt")
             )
             self.model.load_state_dict(state_dict)
             self.model.to(self.device)

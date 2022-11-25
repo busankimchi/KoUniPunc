@@ -4,6 +4,8 @@ Inference utilities
 import os
 import logging
 
+import jsonlines
+
 import torch
 
 from ..model.ko_unipunc import KoUniPunc
@@ -14,20 +16,20 @@ logger = logging.getLogger(__name__)
 
 
 def get_args(pred_config):
-    return torch.load(os.path.join(pred_config.model_dir, "training_args.bin"))
+    return torch.load(os.path.join(pred_config.model_ckpt_dir, "training_args.bin"))
 
 
 def load_model(pred_config, args, device):
     # Check whether model exists
-    if not os.path.exists(pred_config.model_dir):
+    if not os.path.exists(pred_config.model_ckpt_dir):
         raise Exception("Model doesn't exists! Train first!")
 
     try:
-        # Config will be automatically loaded from model_dir
+        # Config will be automatically loaded from model_ckpt_dir
         model = KoUniPunc(args)
 
         state_dict = torch.load(
-            os.path.join(pred_config.model_dir, "kounipunc_state.pt")
+            os.path.join(pred_config.model_ckpt_dir, "kounipunc_state.pt")
         )
         model.load_state_dict(state_dict)
 
@@ -42,16 +44,14 @@ def load_model(pred_config, args, device):
 
 
 def read_input_file(pred_config):
-    lines = []
-    audio_paths = []
-    # TODO: 파일 읽기 수정
-    with open(pred_config.input_file, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            words = line.split()
-            lines.append(words)
+    texts, audio_paths = [], []
 
-    return lines, audio_paths
+    with jsonlines.open(pred_config.input_file) as f:
+        for line in f.iter():
+            texts.append(line["text"].split())
+            audio_paths.append(line["audio_path"])
+
+    return texts, audio_paths
 
 
 def save_output_file(pred_config, lines, preds_list):

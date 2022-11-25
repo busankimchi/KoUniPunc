@@ -40,7 +40,13 @@ python3 -m src.dataset.data_aggregation
 # Finetune
 
 ```
-python3 -m src.train.main --do_train --do_eval --write_pred
+python3 -m src.train.main --do_train --do_eval --write_pred --report_as_file
+```
+
+# Test Data aggregation
+
+```
+python3 -m src.dataset.test_data_aggregation
 ```
 
 # Inference
