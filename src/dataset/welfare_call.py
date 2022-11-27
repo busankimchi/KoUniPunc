@@ -8,10 +8,18 @@ import logging
 
 import jsonlines
 
-from .utils import InputExampleJSON
 from ..utils import PUNCTUATION_LABELS
 
+
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class InputExampleJSON:
+    text: str
+    metadata: dict
+    audio_path: str
+    label: str
 
 
 @dataclass
@@ -29,21 +37,6 @@ class InputExample:
     words: List[str] = field(default_factory=list)
     labels: List[str] = field(default_factory=list)
     audio_path: Optional[str] = None
-
-
-@dataclass
-class InputFeature:
-    """A single set of features of data."""
-
-    text_input_ids: list
-    text_attention_mask: list
-    text_length: int
-    labels: list
-    text_token_type_ids: Optional[list] = None
-
-    audio_input: Optional[list] = None
-    audio_length: Optional[int] = None
-    has_audio: bool = False
 
 
 class WelfareCallDatasetProcessor(object):

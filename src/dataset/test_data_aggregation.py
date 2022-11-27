@@ -5,6 +5,7 @@ import os
 import argparse
 import json
 import logging
+from pathlib import Path
 from tqdm import tqdm
 
 from .utils import clean_sentence, detect_punctuation, remove_unwanted_punc
@@ -78,8 +79,7 @@ def aggregator(args):
     text_data_paths = traverse_dir(args.text_data_dir)
     agg_datas = process_files(text_data_paths)
 
-    if not os.path.exists(args.output_dir):
-        os.mkdir(args.output_dir)
+    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     save_jsonl(agg_datas, "test")
 

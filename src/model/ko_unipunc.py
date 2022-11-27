@@ -39,14 +39,12 @@ class KoUniPunc(nn.Module):
             args.lm_model_type
         ]
 
-        # TODO: 수정 필요
         self.le_config = self.le_config_class.from_pretrained(
             args.lm_model_name_or_path,
             num_labels=num_labels,
             finetuning_task=args.task,
             id2label={str(i): label for i, label in enumerate(label_lst)},
             label2id={label: i for i, label in enumerate(label_lst)},
-            # max_position_embeddings=1024,
         )
 
         # logger.info(f"LE CONFIG :: {self.le_config}")
@@ -118,7 +116,6 @@ class KoUniPunc(nn.Module):
         text_attention_mask: Tensor,
         text_token_type_ids: Tensor,
         labels: Tensor,
-        text_length: Tensor,
         audio_input: Optional[Tensor] = None,
         audio_length: Optional[Tensor] = None,
         has_audio: bool = False,

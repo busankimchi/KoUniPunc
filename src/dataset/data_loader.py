@@ -1,19 +1,18 @@
 """
 Data loader that gets preprocessed data
 """
+from typing import List
 import os
 import logging
-from typing import List
 
 from tqdm import tqdm
 
 import torch
-from torch.utils.data import TensorDataset
-import torchaudio
 from transformers.tokenization_utils import PreTrainedTokenizer
 
 from ..utils import load_tokenizer
-from .welfare_call import InputExample, InputFeature, WelfareCallDatasetProcessor
+from .welfare_call import InputExample, WelfareCallDatasetProcessor
+from .welfare_call_dataset import InputFeature, WelfareCallDataset
 
 logger = logging.getLogger(__name__)
 
@@ -95,31 +94,7 @@ def convert_to_text_features(
         len(label_ids) == max_seq_len
     ), f"Error with slot labels length {len(label_ids)} vs {max_seq_len}"
 
-    return tokens, input_ids, attention_mask, token_type_ids, label_ids, org_text_length
-
-
-def convert_to_audio_features(
-    example: InputExample, max_aud_len: int, wav_sampling_rate: int
-):
-    if example.audio_path is None:
-        return None, None, False
-
-    speech_array, sampling_rate = torchaudio.load(example.audio_path)
-
-    if wav_sampling_rate != sampling_rate:
-        speech_array = torchaudio.functional.resample(
-            speech_array, orig_freq=sampling_rate, new_freq=wav_sampling_rate
-        )
-
-    audio_input = speech_array[0].tolist()
-    speech_array_length = len(audio_input)
-
-    padding_length = max_aud_len - speech_array_length
-
-    if padding_length > 0:
-        audio_input = audio_input + ([0] * padding_length)
-
-    return audio_input, speech_array_length, True
+    return tokens, input_ids, attention_mask, token_type_ids, label_ids
 
 
 def convert_examples_to_features(
@@ -128,7 +103,6 @@ def convert_examples_to_features(
     tokenizer = load_tokenizer(args)
 
     features = []
-
     progress = tqdm(examples, desc="Example Convert")
     for ex_idx, example in enumerate(progress):
         (
@@ -137,12 +111,7 @@ def convert_examples_to_features(
             text_att_mask,
             text_token_type_ids,
             labels,
-            text_length,
         ) = convert_to_text_features(example, tokenizer, args.max_seq_len)
-
-        (audio_input, audio_length, has_audio,) = convert_to_audio_features(
-            example, args.max_audio_time, args.wav_sampling_rate
-        )
 
         if ex_idx < 5:
             logger.info("*** Example ***")
@@ -159,10 +128,6 @@ def convert_examples_to_features(
                 % " ".join([str(x) for x in text_token_type_ids])
             )
             logger.info("labels: %s" % " ".join([str(x) for x in labels]))
-            logger.info("text_length: %s" % text_length)
-
-            # logger.info("audio_input: %s" % " ".join([str(x) for x in audio_input]))
-            logger.info("audio_length: %s" % audio_length)
 
         features.append(
             InputFeature(
@@ -170,92 +135,40 @@ def convert_examples_to_features(
                 text_attention_mask=text_att_mask,
                 text_token_type_ids=text_token_type_ids,
                 labels=labels,
-                text_length=text_length,
-                audio_input=audio_input,
-                audio_length=audio_length,
-                has_audio=has_audio,
+                audio_path=example.audio_path,
             )
         )
 
     return features
 
 
-def load_and_cache_examples(args, mode: str):
-    processor = processors[args.task](args)
-
-    # Load data features from cache or dataset file
-    cached_file_name = "cached_{}_{}_{}_{}".format(
-        args.task,
-        list(filter(None, args.lm_model_name_or_path.split("/"))).pop(),
-        args.max_seq_len,
-        mode,
+def cache_and_load_features(args, mode: str) -> WelfareCallDataset:
+    cached_file_name = "_".join(
+        [
+            "cached",
+            args.task,
+            list(filter(None, args.lm_model_name_or_path.split("/"))).pop(),
+            mode,
+        ]
     )
-
-    # cached data file 가져오기
     cached_features_file = os.path.join(args.data_dir, cached_file_name)
+
+    # Load cached text features if exist
     if os.path.exists(cached_features_file):
         logger.info("Loading features from cached file %s", cached_features_file)
-        features = torch.load(cached_features_file)
+        features: List[InputFeature] = torch.load(cached_features_file)
 
-    # cached data file 없으면 생성
+    # Cache text features if not exist
     else:
-        logger.info("Creating features from dataset file at %s", args.data_dir)
-        if mode not in ["train", "dev", "test"]:
-            raise Exception("For mode, Only train, dev, test is available")
-
+        logger.info(f"{cached_features_file} does not exist! Saving features...")
+        processor = processors[args.task](args)
         examples = processor.get_examples(mode)
         features = convert_examples_to_features(args, examples)
+
         logger.info("Saving features into cached file %s", cached_features_file)
         torch.save(features, cached_features_file)
+        logger.info(
+            "Saving features into cached file %s ... finished!", cached_features_file
+        )
 
-    # Convert to Tensors and build dataset
-    all_text_input_ids = torch.tensor(
-        [f.text_input_ids for f in features], dtype=torch.long
-    )
-    logger.info("all_text_input_ids.size(): {}".format(all_text_input_ids.size()))
-
-    all_text_attention_mask = torch.tensor(
-        [f.text_attention_mask for f in features], dtype=torch.long
-    )
-    logger.info(
-        "all_text_attention_mask.size(): {}".format(all_text_attention_mask.size())
-    )
-
-    all_text_token_type_ids = torch.tensor(
-        [f.text_token_type_ids for f in features], dtype=torch.long
-    )
-    logger.info(
-        "all_text_token_type_ids.size(): {}".format(all_text_token_type_ids.size())
-    )
-
-    all_labels = torch.tensor([f.labels for f in features], dtype=torch.long)
-    logger.info("all_labels.size(): {}".format(all_labels.size()))
-
-    all_text_length = torch.tensor([f.text_length for f in features], dtype=torch.long)
-    logger.info("all_text_length.size(): {}".format(all_text_length.size()))
-
-    all_audio_input = torch.tensor(
-        [f.audio_input for f in features], dtype=torch.float32
-    )
-    logger.info("all_audio_input.size(): {}".format(all_audio_input.size()))
-
-    all_audio_length = torch.tensor(
-        [f.audio_length for f in features], dtype=torch.long
-    )
-    logger.info("all_audio_length.size(): {}".format(all_audio_length.size()))
-
-    all_has_audio = torch.tensor([f.has_audio for f in features], dtype=torch.bool)
-    logger.info("all_has_audio.size(): {}".format(all_has_audio.size()))
-
-    dataset = TensorDataset(
-        all_text_input_ids,
-        all_text_attention_mask,
-        all_text_token_type_ids,
-        all_labels,
-        all_text_length,
-        all_audio_input,
-        all_audio_length,
-        all_has_audio,
-    )
-
-    return dataset
+    return WelfareCallDataset(args, features)

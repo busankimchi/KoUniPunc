@@ -3,19 +3,10 @@ Data loader utils
 """
 import re
 import unicodedata
-from dataclasses import dataclass
 
 # from soynlp.normalizer import emoticon_normalize, repeat_normalize
 
 from ..utils import PUNCTUATIONS
-
-
-@dataclass
-class InputExampleJSON:
-    text: str
-    metadata: dict
-    audio_path: str
-    label: str
 
 
 def _is_control(char):

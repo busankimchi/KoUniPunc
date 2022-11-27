@@ -6,23 +6,29 @@ import re
 import argparse
 import json
 import logging
+from pathlib import Path
 from tqdm import tqdm
-from sklearn.model_selection import train_test_split
 
 from .utils import clean_sentence, detect_punctuation, remove_unwanted_punc
 from ..utils import init_logger
 
 logger = logging.getLogger(__name__)
 
+DATA_BASE_PATH = "/mnt/data_storage/186.복지 분야 콜센터 상담데이터"
+TRAIN_BASE_PATH = f"{DATA_BASE_PATH}/01.데이터/1.Training"
+DEV_BASE_PATH = f"{DATA_BASE_PATH}/01.데이터/2.Validation"
+
 
 def traverse_dir(rootpath: str):
     file_paths = []
-    for subdir, dirs, files in os.walk(rootpath):
+
+    label_path = os.path.join(rootpath, "라벨링데이터")
+    for subdir, dirs, files in os.walk(label_path):
         for file in files:
             file_path = os.path.join(subdir, file)
             key, ext = os.path.splitext(file)
 
-            if ext in [".wav", ".json"]:
+            if ext in [".json"]:
                 file_paths.append((key, file_path))
 
     file_paths = sorted(file_paths, key=lambda tup: tup[0])
@@ -41,7 +47,7 @@ def generate_label(origin_text: str):
     for word in words:
         no_punc_word, punc = detect_punctuation(word)
         punc_seq.append(punc)
-        no_punc_word_seq.append(no_punc_word)
+        no_punc_word_seq.append(no_punc_word.strip())
 
     assert len(punc_seq) == len(no_punc_word_seq)
 
@@ -49,7 +55,7 @@ def generate_label(origin_text: str):
     return text, label
 
 
-def process_files(paths: list):
+def process_files(paths: list, mode: str):
     aggregated_datas = []
     aggregated_labels = []
     for key, label_path in tqdm(paths, desc="Aggregation"):
@@ -61,15 +67,24 @@ def process_files(paths: list):
             metadata = data["info"][0]["metadata"]
 
             # print(f"before : {audio_path}")
-            audio_path = re.sub("^Y:", "/mnt/data_storage/sample_data", audio_path)
-            audio_path = re.sub("03.원천데이터", "원천데이터", audio_path)
-            audio_path = re.sub("01.대학병원", "TS1_01.대학병원/01.대학병원", audio_path)
+
             audio_path = re.sub("\\\\", "/", audio_path)
+            audio_path = re.sub("^Y:", f"{DATA_BASE_PATH}/01.데이터", audio_path)
+
+            if mode == "train":
+                audio_path = re.sub("03.원천데이터", "1.Training/원천데이터", audio_path)
+            elif mode == "dev":
+                audio_path = re.sub("03.원천데이터", "2.Validation/원천데이터", audio_path)
+
             # print(f"after : {audio_path}")
 
-            assert os.path.exists(audio_path)
+            if not os.path.exists(audio_path):
+                continue
 
             text, label = generate_label(origin_text)
+
+            if len(text) == 0:
+                continue
 
             aggregated_datas.append((text, metadata, audio_path))
             aggregated_labels.append(label)
@@ -94,18 +109,16 @@ def save_jsonl(datas, labels, mode: str):
 def aggregator(args):
     init_logger()
 
-    label_paths = traverse_dir(args.label_data_dir)
-    agg_datas, agg_labels = process_files(label_paths)
+    train_paths = traverse_dir(args.train_data_dir)
+    agg_train_datas, agg_train_labels = process_files(train_paths, "train")
 
-    datas_train, datas_dev, labels_train, labels_dev = train_test_split(
-        agg_datas, agg_labels, test_size=args.split_ratio, shuffle=True, random_state=42
-    )
-
-    if not os.path.exists(args.output_dir):
-        os.mkdir(args.output_dir)
-
-    save_jsonl(datas_train, labels_train, "train")
-    save_jsonl(datas_dev, labels_dev, "dev")
+    dev_paths = traverse_dir(args.dev_data_dir)
+    agg_dev_datas, agg_dev_labels = process_files(dev_paths, "dev")
+    
+    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    
+    save_jsonl(agg_train_datas, agg_train_labels, "train")
+    save_jsonl(agg_dev_datas, agg_dev_labels, "dev")
 
 
 if __name__ == "__main__":
@@ -113,28 +126,16 @@ if __name__ == "__main__":
 
     """Paths"""
     parser.add_argument(
-        "--label_data_dir",
-        default="/mnt/data_storage/sample_data/라벨링데이터",
-        type=str,
-        help="The label data dir",
+        "--train_data_dir", default=TRAIN_BASE_PATH, type=str, help="Train data dir"
     )
     parser.add_argument(
-        "--origin_data_dir",
-        default="/mnt/data_storage/sample_data/원천데이터",
-        type=str,
-        help="The origin data dir",
+        "--dev_data_dir", default=DEV_BASE_PATH, type=str, help="Dev data dir"
     )
     parser.add_argument(
         "--output_dir",
-        default="/mnt/data_storage/sample_data",
+        default=DATA_BASE_PATH,
         type=str,
         help="The aggregated data dir",
-    )
-    parser.add_argument(
-        "--split_ratio",
-        default=0.1,
-        type=float,
-        help="split rate for train and dev",
     )
 
     args = parser.parse_args()

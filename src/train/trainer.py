@@ -5,6 +5,7 @@ from typing import Literal
 import os
 import shutil
 import logging
+from pathlib import Path
 from tqdm import tqdm, trange
 
 import pandas as pd
@@ -40,9 +41,6 @@ class Trainer(object):
         # Use cross entropy ignore index as padding label id so that only real label ids contribute to the loss later
         self.pad_token_label_id = torch.nn.CrossEntropyLoss().ignore_index
 
-        self.model = KoUniPunc(args)
-        self.model.to(self.device)
-
         self.test_texts = None
         if args.write_pred:
             self.test_texts = get_eval_texts(args)
@@ -51,6 +49,8 @@ class Trainer(object):
                 shutil.rmtree(args.pred_dir)
 
     def _init_trainer(self, total_data_len: int):
+        loaded_res = self.load_model()
+
         if self.args.max_steps > 0:
             t_total = self.args.max_steps
             self.args.num_train_epochs = (
@@ -93,6 +93,9 @@ class Trainer(object):
             eps=self.args.adam_epsilon,
         )
 
+        if loaded_res is not None:
+            optimizer.load_state_dict(loaded_res["optimizer"])
+
         # TODO: learning rate scheduler with NOAM, warm-up step 8000
         scheduler = get_linear_schedule_with_warmup(
             optimizer,
@@ -124,8 +127,7 @@ class Trainer(object):
         optimizer, scheduler = self._init_trainer(len(train_dataloader))
 
         # Train!
-        global_step = 0
-        tr_loss = 0.0
+        tr_loss, global_step = 0.0, 0
         self.model.zero_grad()
 
         train_iterator = trange(int(self.args.num_train_epochs), desc="Epoch")
@@ -135,17 +137,16 @@ class Trainer(object):
                 self.model.train()
                 batch = tuple(t.to(self.device) for t in batch)
 
-                # logger.info(f"BATCH :: {batch}")
+                # logger.info(f"BATCH :: {batch[3]}")
 
                 inputs = {
                     "text_input_ids": batch[0],
                     "text_attention_mask": batch[1],
                     "text_token_type_ids": batch[2],
-                    "labels": batch[3],
-                    "text_length": batch[4],
-                    "audio_input": batch[5],
-                    "audio_length": batch[6],
-                    "has_audio": batch[7][0],
+                    "audio_input": batch[3],
+                    "audio_length": batch[4],
+                    "has_audio": batch[5][0],
+                    "labels": batch[6],
                 }
                 outputs = self.model(**inputs)
                 loss: Tensor = outputs[0]
@@ -162,7 +163,7 @@ class Trainer(object):
                     )
 
                     optimizer.step()
-                    scheduler.step()  # Update learning rate schedule
+                    scheduler.step()
                     self.model.zero_grad()
                     global_step += 1
 
@@ -176,7 +177,7 @@ class Trainer(object):
                         self.args.save_steps > 0
                         and global_step % self.args.save_steps == 0
                     ):
-                        self.save_model()
+                        self.save_model(step, optimizer)
 
                 if 0 < self.args.max_steps < global_step:
                     epoch_iterator.close()
@@ -205,10 +206,8 @@ class Trainer(object):
         logger.info("  Num examples = %d", len(dataset))
         logger.info("  Batch size = %d", self.args.eval_batch_size)
 
-        eval_loss = 0.0
-        nb_eval_steps = 0
-        preds = None
-        out_label_ids = None
+        eval_loss, nb_eval_steps = 0.0, 0
+        preds, out_label_ids = None, None
 
         self.model.eval()
         for batch in tqdm(eval_dataloader, desc="Evaluating"):
@@ -219,15 +218,12 @@ class Trainer(object):
                     "text_input_ids": batch[0],
                     "text_attention_mask": batch[1],
                     "text_token_type_ids": batch[2],
-                    "labels": batch[3],
-                    "text_length": batch[4],
-                    "audio_input": batch[5],
-                    "audio_length": batch[6],
-                    "has_audio": batch[7][0],
+                    "audio_input": batch[3],
+                    "audio_length": batch[4],
+                    "has_audio": batch[5][0],
+                    "labels": batch[6],
                 }
-                outputs = self.model(**inputs)
-                # outputs = self.model(**inputs).tolist()
-                tmp_eval_loss, logits = outputs[:2]
+                tmp_eval_loss, logits = self.model(**inputs)
 
                 eval_loss += tmp_eval_loss.mean().item()
 
@@ -237,6 +233,7 @@ class Trainer(object):
             if preds is None:
                 preds = logits.detach().cpu().numpy()
                 out_label_ids = inputs["labels"].detach().cpu().numpy()
+
             else:
                 preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
                 out_label_ids = np.append(
@@ -261,11 +258,11 @@ class Trainer(object):
                     preds_list[i].append(slot_label_map[preds[i][j]])
 
         if self.args.write_pred:
-            if not os.path.exists(self.args.pred_dir):
-                os.mkdir(self.args.pred_dir)
+            save_dir = os.path.join(self.args.pred_dir, self.args.log_prefix)
+            Path(save_dir).mkdir(parents=True, exist_ok=True)
 
             with open(
-                os.path.join(self.args.pred_dir, f"pred_{mode}_{step}.txt"),
+                os.path.join(save_dir, f"pred_{mode}_{step}.txt"),
                 "w",
                 encoding="utf-8",
             ) as f:
@@ -287,10 +284,10 @@ class Trainer(object):
         report = show_report(out_label_list, preds_list, self.args.report_as_file)
 
         if self.args.report_as_file:
-            if not os.path.exists(self.args.report_dir):
-                os.makedirs(self.args.report_dir)
+            save_dir = os.path.join(self.args.report_dir, self.args.log_prefix)
+            Path(save_dir).mkdir(parents=True, exist_ok=True)
 
-            report_path = os.path.join(self.args.report_dir, f"report_{step}.csv")
+            report_path = os.path.join(save_dir, f"report_{step}.csv")
             df = pd.DataFrame(report).transpose()
             df.to_csv(report_path, sep=",")
             logger.info("Saved evaluated results!")
@@ -300,41 +297,49 @@ class Trainer(object):
 
         return results
 
-    def save_model(self):
-        # Save model checkpoint (Overwrite)
-        if not os.path.exists(self.args.model_ckpt_dir):
-            os.makedirs(self.args.model_ckpt_dir)
-
-        # model_to_save = (
-        #     self.model.module if hasattr(self.model, "module") else self.model
-        # )
-        # model_to_save.save_pretrained(self.args.model_ckpt_dir)
+    def save_model(self, epoch, optimizer):
+        # Save model checkpoint
+        save_dir = os.path.join(self.args.model_ckpt_dir, self.args.log_prefix)
+        Path(save_dir).mkdir(parents=True, exist_ok=True)
 
         # save model
         torch.save(
-            self.model.state_dict(),
-            os.path.join(self.args.model_ckpt_dir, "kounipunc_state.pt"),
+            {
+                "epoch": epoch,
+                "model_state_dict": self.model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+            },
+            os.path.join(save_dir, f"kounipunc_{epoch}.pt"),
         )
 
         # Save training arguments together with the trained model
         torch.save(
-            self.args, os.path.join(self.args.model_ckpt_dir, "training_args.bin")
+            self.args,
+            os.path.join(save_dir, "kounipunc_args.bin"),
         )
         logger.info("Saving model checkpoint to %s", self.args.model_ckpt_dir)
 
     def load_model(self):
-        # Check whether model exists
-        if not os.path.exists(self.args.model_ckpt_dir):
-            raise Exception("Model doesn't exists! Train first!")
+        self.model = KoUniPunc(self.args)
 
-        try:
-            # self.model = self.model_class.from_pretrained(self.args.model_ckpt_dir)
-            state_dict = torch.load(
-                os.path.join(self.args.model_ckpt_dir, "kounipunc_state.pt")
-            )
-            self.model.load_state_dict(state_dict)
+        if self.args.load_model_path is not None:
+            # Check whether model exists
+            if not os.path.exists(self.args.load_model_path):
+                raise Exception("Model doesn't exists! Train first!")
+
+            try:
+                model_pt = torch.load(self.args.load_model_path)
+
+                self.model.load_state_dict(model_pt["model_state_dict"])
+                self.model.to(self.device)
+                logger.info("***** Model Loaded *****")
+
+                return {"optimizer": model_pt["optimizer_state_dict"]}
+
+            except:
+                raise Exception("Some model files might be missing...")
+        else:
             self.model.to(self.device)
             logger.info("***** Model Loaded *****")
 
-        except:
-            raise Exception("Some model files might be missing...")
+            return None

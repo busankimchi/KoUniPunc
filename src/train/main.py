@@ -4,7 +4,8 @@ Training Entry file
 import argparse
 
 from .trainer import Trainer
-from ..dataset.data_loader import load_and_cache_examples
+from ..dataset.data_loader import cache_and_load_features
+from ..dataset.data_aggregation import DATA_BASE_PATH
 from ..utils import init_logger, set_seed
 from ..utils import (
     LM_MODEL_CLASSES,
@@ -18,10 +19,9 @@ def main(args):
     init_logger()
     set_seed(args)
 
-    train_dataset = load_and_cache_examples(args, mode="train")
-    # train_dataset = load_and_cache_examples(args, mode="dev")
-    dev_dataset = load_and_cache_examples(args, mode="dev")
-    # test_dataset = load_and_cache_examples(args, mode="test")
+    train_dataset = cache_and_load_features(args, mode="train")
+    dev_dataset = cache_and_load_features(args, mode="dev")
+    # test_dataset = cache_and_load_features(args, mode="test")
     test_dataset = None
 
     trainer = Trainer(args, train_dataset, dev_dataset, test_dataset)
@@ -45,8 +45,17 @@ if __name__ == "__main__":
 
     """Trainer"""
     parser.add_argument(
+        "--log_prefix", default="221127_training", type=str, help="Log prefix"
+    )
+    parser.add_argument(
+        "--load_model_path", default=None, type=str, help="Model checkpoint path"
+    )
+
+    parser.add_argument(
         "--train_batch_size", default=2, type=int, help="Batch size for training"
     )
+    
+    # TODO: 조정해야 함
     parser.add_argument(
         "--eval_batch_size", default=4, type=int, help="Batch size for evaluation"
     )
@@ -156,13 +165,13 @@ if __name__ == "__main__":
 
     """Paths"""
     parser.add_argument(
-        "--data_dir",
-        default="/mnt/data_storage/sample_data",
-        type=str,
-        help="The input data dir",
+        "--data_dir", default=DATA_BASE_PATH, type=str, help="The input data dir"
     )
     parser.add_argument(
-        "--model_ckpt_dir", default="./ckpt", type=str, help="Path for saving model"
+        "--model_ckpt_dir",
+        default="/mnt/data_storage/kounipunc/ckpt",
+        type=str,
+        help="Path for saving model",
     )
     parser.add_argument(
         "--pred_dir", default="./preds", type=str, help="The prediction file dir"
@@ -222,12 +231,12 @@ if __name__ == "__main__":
 
     """Training General Options"""
     parser.add_argument(
-        "--logging_steps", type=int, default=1200, help="Log every X updates steps."
+        "--logging_steps", type=int, default=3600, help="Log every X updates steps."
     )
     parser.add_argument(
         "--save_steps",
         type=int,
-        default=1200,
+        default=3600,
         help="Save checkpoint every X updates steps.",
     )
 

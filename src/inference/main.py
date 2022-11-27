@@ -220,11 +220,10 @@ def inference(pred_config):
                 "text_input_ids": batch[0],
                 "text_attention_mask": batch[1],
                 "text_token_type_ids": batch[2],
-                "labels": None,
-                "text_length": batch[4],
-                "audio_input": batch[5],
-                "audio_length": batch[6],
-                "has_audio": batch[7][0],
+                "audio_input": batch[3],
+                "audio_length": batch[4],
+                "has_audio": batch[5][0],
+                "labels": batch[6],
             }
             outputs = model(**inputs)
             logits: Tensor = outputs[1]
@@ -251,7 +250,7 @@ def inference(pred_config):
                 preds_list[i].append(slot_label_map[preds[i][j]])
 
     # Write to output file
-    save_output_file(pred_config, lines, preds_list)
+    save_output_file(pred_config, texts, preds_list)
 
 
 if __name__ == "__main__":
@@ -267,7 +266,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--model_ckpt_dir", default="./ckpt", type=str, help="Path to save, load model"
+        "--model_ckpt_dir",
+        default="/mnt/data_storage/kounipunc/ckpt",
+        type=str,
+        help="Path to save, load model",
     )
 
     parser.add_argument(
