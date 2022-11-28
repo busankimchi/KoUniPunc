@@ -14,7 +14,8 @@ from ..utils import init_logger
 
 logger = logging.getLogger(__name__)
 
-DATA_BASE_PATH = "/mnt/data_storage/186.복지 분야 콜센터 상담데이터"
+# DATA_BASE_PATH = "/mnt/data_storage/186.복지 분야 콜센터 상담데이터"
+DATA_BASE_PATH = "./data/186.복지 분야 콜센터 상담데이터"
 TRAIN_BASE_PATH = f"{DATA_BASE_PATH}/01.데이터/1.Training"
 DEV_BASE_PATH = f"{DATA_BASE_PATH}/01.데이터/2.Validation"
 
@@ -114,9 +115,9 @@ def aggregator(args):
 
     dev_paths = traverse_dir(args.dev_data_dir)
     agg_dev_datas, agg_dev_labels = process_files(dev_paths, "dev")
-    
+
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
-    
+
     save_jsonl(agg_train_datas, agg_train_labels, "train")
     save_jsonl(agg_dev_datas, agg_dev_labels, "dev")
 

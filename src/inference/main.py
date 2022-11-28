@@ -267,7 +267,8 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--model_ckpt_dir",
-        default="/mnt/data_storage/kounipunc/ckpt",
+        # default="/mnt/data_storage/kounipunc/ckpt",
+        default="./ckpt",
         type=str,
         help="Path to save, load model",
     )

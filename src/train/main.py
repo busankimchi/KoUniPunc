@@ -3,6 +3,7 @@ Training Entry file
 """
 import argparse
 
+
 from .trainer import Trainer
 from ..dataset.data_loader import cache_and_load_features
 from ..dataset.data_aggregation import DATA_BASE_PATH
@@ -20,6 +21,7 @@ def main(args):
     set_seed(args)
 
     train_dataset = cache_and_load_features(args, mode="train")
+    # train_dataset = cache_and_load_features(args, mode="dev")
     dev_dataset = cache_and_load_features(args, mode="dev")
     # test_dataset = cache_and_load_features(args, mode="test")
     test_dataset = None
@@ -52,13 +54,15 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--train_batch_size", default=2, type=int, help="Batch size for training"
+        "--train_batch_size", default=1, type=int, help="Batch size for training"
     )
 
     # TODO: 조정해야 함
     parser.add_argument(
         "--eval_batch_size", default=16, type=int, help="Batch size for evaluation"
     )
+
+    parser.add_argument("--amp", default=False, action="store_true", help="Enable AMP")
 
     """KoUniPunc"""
     parser.add_argument(
@@ -169,7 +173,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model_ckpt_dir",
-        default="/mnt/data_storage/kounipunc/ckpt",
+        # default="/mnt/data_storage/kounipunc/ckpt",
+        default="./ckpt",
         type=str,
         help="Path for saving model",
     )
@@ -231,12 +236,12 @@ if __name__ == "__main__":
 
     """Training General Options"""
     parser.add_argument(
-        "--logging_steps", type=int, default=20, help="Log every X updates steps."
+        "--logging_steps", type=int, default=100, help="Log every X updates steps."
     )
     parser.add_argument(
         "--save_steps",
         type=int,
-        default=20,
+        default=100,
         help="Save checkpoint every X updates steps.",
     )
 

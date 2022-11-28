@@ -13,6 +13,7 @@ import numpy as np
 import torch
 from torch import Tensor
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from torch.cuda.amp import GradScaler, autocast
 from transformers import AdamW, get_linear_schedule_with_warmup
 
 from ..utils import (
@@ -50,7 +51,6 @@ class Trainer(object):
 
     def _init_trainer(self, total_data_len: int):
         loaded_res = self.load_model()
-
         resume = loaded_res["resume"] if loaded_res is not None else None
 
         if self.args.max_steps > 0:
@@ -105,6 +105,8 @@ class Trainer(object):
             num_training_steps=t_total,
         )
 
+        scaler = GradScaler(enabled=self.args.amp)
+
         logger.info("***** Running training *****")
         logger.info("  Num examples = %d", len(self.train_dataset))
         logger.info("  Num Epochs = %d", self.args.num_train_epochs)
@@ -116,7 +118,7 @@ class Trainer(object):
         logger.info("  Logging steps = %d", self.args.logging_steps)
         logger.info("  Save steps = %d", self.args.save_steps)
 
-        return optimizer, scheduler, resume
+        return optimizer, scheduler, scaler, resume
 
     def _get_data_loader(self, mode: Literal["train", "dev"]):
         if mode == "train":
@@ -125,6 +127,9 @@ class Trainer(object):
                 self.train_dataset,
                 sampler=train_sampler,
                 batch_size=self.args.train_batch_size,
+                # TODO: 변경
+                num_workers=4,
+                pin_memory=True,
             )
             return train_dataloader
 
@@ -134,6 +139,8 @@ class Trainer(object):
                 self.dev_dataset,
                 sampler=eval_sampler,
                 batch_size=self.args.eval_batch_size,
+                num_workers=4,
+                pin_memory=True,
             )
             return eval_dataloader
 
@@ -142,7 +149,7 @@ class Trainer(object):
 
     def train(self):
         train_dataloader = self._get_data_loader("train")
-        optimizer, scheduler, resume = self._init_trainer(len(train_dataloader))
+        optimizer, scheduler, scaler, resume = self._init_trainer(len(train_dataloader))
 
         # Train!
         tr_loss, global_step = 0.0, 0
@@ -157,6 +164,7 @@ class Trainer(object):
             for step, batch in enumerate(epoch_iterator):
                 self.model.train()
                 batch = tuple(t.to(self.device) for t in batch)
+                # batch = tuple(t.to(self.device, non_blocking=True) for t in batch)
 
                 # logger.info(f"BATCH :: {batch[3]}")
 
@@ -169,22 +177,45 @@ class Trainer(object):
                     "has_audio": batch[5][0],
                     "labels": batch[6],
                 }
-                outputs = self.model(**inputs)
-                loss: Tensor = outputs[0]
+
+                with autocast(enabled=self.args.amp):
+                    outputs = self.model(**inputs)
+                    loss: Tensor = outputs[0]
+
+                # outputs = self.model(**inputs)
+                # loss: Tensor = outputs[0]
+
+                # logger.info(f"LOSS : {loss}")
 
                 if self.args.gradient_accumulation_steps > 1:
                     loss = loss / self.args.gradient_accumulation_steps
 
-                loss.backward()
+                scaler.scale(loss).backward()
+                # loss.backward()
                 tr_loss += loss.item()
 
                 if (step + 1) % self.args.gradient_accumulation_steps == 0:
+                    scaler.unscale_(optimizer)
+
                     torch.nn.utils.clip_grad_norm_(
                         self.model.parameters(), self.args.max_grad_norm
                     )
 
-                    optimizer.step()
-                    scheduler.step()
+                    scaler.step(optimizer)
+                    scale = scaler.get_scale()
+                    scaler.update()
+
+                    skip_lr_sched = scale != scaler.get_scale()
+
+                    if not skip_lr_sched:
+                        scheduler.step()
+                    else:
+                        logger.info(f"SKIPPED.. {scale}")
+                        torch.cuda.empty_cache()
+
+                    # optimizer.step()
+                    # scheduler.step()
+
                     self.model.zero_grad()
                     global_step += 1
 
@@ -235,7 +266,9 @@ class Trainer(object):
                     "has_audio": batch[5][0],
                     "labels": batch[6],
                 }
-                tmp_eval_loss, logits = self.model(**inputs)
+
+                with autocast(enabled=self.args.amp):
+                    tmp_eval_loss, logits = self.model(**inputs)
 
                 eval_loss += tmp_eval_loss.mean().item()
 
