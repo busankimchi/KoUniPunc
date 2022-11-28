@@ -51,6 +51,8 @@ class Trainer(object):
     def _init_trainer(self, total_data_len: int):
         loaded_res = self.load_model()
 
+        resume = loaded_res["resume"] if loaded_res is not None else None
+
         if self.args.max_steps > 0:
             t_total = self.args.max_steps
             self.args.num_train_epochs = (
@@ -114,24 +116,43 @@ class Trainer(object):
         logger.info("  Logging steps = %d", self.args.logging_steps)
         logger.info("  Save steps = %d", self.args.save_steps)
 
-        return optimizer, scheduler
+        return optimizer, scheduler, resume
+
+    def _get_data_loader(self, mode: Literal["train", "dev"]):
+        if mode == "train":
+            train_sampler = RandomSampler(self.train_dataset)
+            train_dataloader = DataLoader(
+                self.train_dataset,
+                sampler=train_sampler,
+                batch_size=self.args.train_batch_size,
+            )
+            return train_dataloader
+
+        elif mode == "dev":
+            eval_sampler = SequentialSampler(self.dev_dataset)
+            eval_dataloader = DataLoader(
+                self.dev_dataset,
+                sampler=eval_sampler,
+                batch_size=self.args.eval_batch_size,
+            )
+            return eval_dataloader
+
+        else:
+            raise Exception("Only dev and test dataset available")
 
     def train(self):
-        train_sampler = RandomSampler(self.train_dataset)
-        train_dataloader = DataLoader(
-            self.train_dataset,
-            sampler=train_sampler,
-            batch_size=self.args.train_batch_size,
-        )
-
-        optimizer, scheduler = self._init_trainer(len(train_dataloader))
+        train_dataloader = self._get_data_loader("train")
+        optimizer, scheduler, resume = self._init_trainer(len(train_dataloader))
 
         # Train!
         tr_loss, global_step = 0.0, 0
         self.model.zero_grad()
 
         train_iterator = trange(int(self.args.num_train_epochs), desc="Epoch")
-        for _ in train_iterator:
+        for epoch in train_iterator:
+            if resume is not None and resume["epoch"] > epoch:
+                continue
+
             epoch_iterator = tqdm(train_dataloader, desc="Iteration")
             for step, batch in enumerate(epoch_iterator):
                 self.model.train()
@@ -171,13 +192,13 @@ class Trainer(object):
                         self.args.logging_steps > 0
                         and global_step % self.args.logging_steps == 0
                     ):
-                        self.evaluate("dev", global_step)
+                        self.evaluate(global_step)
 
                     if (
                         self.args.save_steps > 0
                         and global_step % self.args.save_steps == 0
                     ):
-                        self.save_model(step, optimizer)
+                        self.save_model(step, epoch, optimizer)
 
                 if 0 < self.args.max_steps < global_step:
                     epoch_iterator.close()
@@ -189,21 +210,12 @@ class Trainer(object):
 
         return global_step, tr_loss / global_step
 
-    def evaluate(self, mode: Literal["dev", "test"], step):
-        dataset_map = {"dev": self.dev_dataset, "test": self.test_dataset}
-
-        if mode not in ["dev", "test"]:
-            raise Exception("Only dev and test dataset available")
-
-        dataset = dataset_map[mode]
-        eval_sampler = SequentialSampler(dataset)
-        eval_dataloader = DataLoader(
-            dataset, sampler=eval_sampler, batch_size=self.args.eval_batch_size
-        )
+    def evaluate(self, step):
+        eval_dataloader = self._get_data_loader("dev")
 
         # Eval!
-        logger.info("***** Running evaluation on %s dataset *****", mode)
-        logger.info("  Num examples = %d", len(dataset))
+        logger.info("***** Running evaluation on dev dataset *****")
+        logger.info("  Num examples = %d", len(self.dev_dataset))
         logger.info("  Batch size = %d", self.args.eval_batch_size)
 
         eval_loss, nb_eval_steps = 0.0, 0
@@ -262,9 +274,7 @@ class Trainer(object):
             Path(save_dir).mkdir(parents=True, exist_ok=True)
 
             with open(
-                os.path.join(save_dir, f"pred_{mode}_{step}.txt"),
-                "w",
-                encoding="utf-8",
+                os.path.join(save_dir, f"pred_{step}.txt"), "w", encoding="utf-8"
             ) as f:
                 for text, true_label, pred_label in zip(
                     self.test_texts, out_label_list, preds_list
@@ -297,7 +307,7 @@ class Trainer(object):
 
         return results
 
-    def save_model(self, epoch, optimizer):
+    def save_model(self, step, epoch, optimizer):
         # Save model checkpoint
         save_dir = os.path.join(self.args.model_ckpt_dir, self.args.log_prefix)
         Path(save_dir).mkdir(parents=True, exist_ok=True)
@@ -306,6 +316,7 @@ class Trainer(object):
         torch.save(
             {
                 "epoch": epoch,
+                "step": step,
                 "model_state_dict": self.model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
             },
@@ -321,6 +332,7 @@ class Trainer(object):
 
     def load_model(self):
         self.model = KoUniPunc(self.args)
+        self.model.to(self.device)
 
         if self.args.load_model_path is not None:
             # Check whether model exists
@@ -331,15 +343,18 @@ class Trainer(object):
                 model_pt = torch.load(self.args.load_model_path)
 
                 self.model.load_state_dict(model_pt["model_state_dict"])
-                self.model.to(self.device)
+                # self.model.to(self.device)
                 logger.info("***** Model Loaded *****")
 
-                return {"optimizer": model_pt["optimizer_state_dict"]}
+                return {
+                    "optimizer": model_pt["optimizer_state_dict"],
+                    "resume": {"epoch": model_pt["epoch"], "step": model_pt["step"]},
+                }
 
             except:
                 raise Exception("Some model files might be missing...")
-        else:
-            self.model.to(self.device)
-            logger.info("***** Model Loaded *****")
 
-            return None
+        # self.model.to(self.device)
+        logger.info("***** Model Loaded *****")
+
+        return None

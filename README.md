@@ -9,7 +9,7 @@ Original code implementation is from https://github.com/Yaoming95/UniPunc.
 ## Conda env setting
 Creates conda environemnt for this model.
 ```
-$ conda create env --file env.yaml
+$ conda env create --file env.yaml
 ```
 
 # Process
@@ -24,7 +24,11 @@ $ python3 -m src.dataset.data_aggregation
 ## Finetune
 Fine tune the model using aggregated data.
 ```
-$ python3 -m src.train.main --do_train --do_eval --write_pred --report_as_file
+$ python3 -m src.train.main --do_train --do_eval --write_pred --report_as_file --log_prefix 221128_debug
+```
+
+```
+$ python3 -m src.train.main --do_train --do_eval --write_pred --report_as_file --log_prefix 221128_debug
 ```
 
 ## Test Data aggregation

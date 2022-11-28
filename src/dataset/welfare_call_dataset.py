@@ -22,7 +22,6 @@ class InputFeature:
 
     audio_path: Optional[str] = None
 
-
 class WelfareCallDataset(Dataset):
     def __init__(self, args, features: List[InputFeature]):
         self.args = args

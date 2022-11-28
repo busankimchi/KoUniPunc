@@ -31,8 +31,8 @@ def main(args):
 
     if args.do_eval:
         trainer.load_model()
-        # trainer.evaluate("test", "eval")
-        trainer.evaluate("dev", "eval")
+        # trainer.evaluate("eval")
+        trainer.evaluate("eval")
 
 
 if __name__ == "__main__":
@@ -54,10 +54,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--train_batch_size", default=2, type=int, help="Batch size for training"
     )
-    
+
     # TODO: 조정해야 함
     parser.add_argument(
-        "--eval_batch_size", default=4, type=int, help="Batch size for evaluation"
+        "--eval_batch_size", default=16, type=int, help="Batch size for evaluation"
     )
 
     """KoUniPunc"""
@@ -224,19 +224,19 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--num_train_epochs",
-        default=15.0,
+        default=5.0,
         type=float,
         help="Total number of training epochs to perform.",
     )
 
     """Training General Options"""
     parser.add_argument(
-        "--logging_steps", type=int, default=3600, help="Log every X updates steps."
+        "--logging_steps", type=int, default=20, help="Log every X updates steps."
     )
     parser.add_argument(
         "--save_steps",
         type=int,
-        default=3600,
+        default=20,
         help="Save checkpoint every X updates steps.",
     )
 
