@@ -14,7 +14,9 @@ from ..utils import init_logger
 
 logger = logging.getLogger(__name__)
 
-DATA_BASE_PATH = "/mnt/data_storage/186.복지 분야 콜센터 상담데이터"
+# DATA_BASE_PATH = "/mnt/data_storage/186.복지 분야 콜센터 상담데이터"
+DATA_BASE_PATH = "./data/186.복지 분야 콜센터 상담데이터"
+
 TRAIN_BASE_PATH = f"{DATA_BASE_PATH}/01.데이터/1.Training"
 DEV_BASE_PATH = f"{DATA_BASE_PATH}/01.데이터/2.Validation"
 

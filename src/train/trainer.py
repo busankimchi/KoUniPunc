@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 import torch
 from torch import Tensor
+from torch import nn
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers import AdamW, get_linear_schedule_with_warmup
 
@@ -116,14 +117,31 @@ class Trainer(object):
 
         return optimizer, scheduler
 
-    def train(self):
-        train_sampler = RandomSampler(self.train_dataset)
-        train_dataloader = DataLoader(
-            self.train_dataset,
-            sampler=train_sampler,
-            batch_size=self.args.train_batch_size,
-        )
+    def _get_data_loader(self, mode: Literal["train", "dev"]):
+        if mode == "train":
+            train_sampler = RandomSampler(self.train_dataset)
 
+            train_dataloader = DataLoader(
+                self.train_dataset,
+                sampler=train_sampler,
+                batch_size=self.args.train_batch_size,
+            )
+            return train_dataloader
+
+        elif mode == "dev":
+            eval_sampler = SequentialSampler(self.dev_dataset)
+            eval_dataloader = DataLoader(
+                self.dev_dataset,
+                sampler=eval_sampler,
+                batch_size=self.args.eval_batch_size,
+            )
+            return eval_dataloader
+
+        else:
+            raise Exception("Only dev and test dataset available")
+
+    def train(self):
+        train_dataloader = self._get_data_loader("train")
         optimizer, scheduler = self._init_trainer(len(train_dataloader))
 
         # Train!
@@ -131,13 +149,13 @@ class Trainer(object):
         self.model.zero_grad()
 
         train_iterator = trange(int(self.args.num_train_epochs), desc="Epoch")
-        for _ in train_iterator:
+        for epoch in train_iterator:
             epoch_iterator = tqdm(train_dataloader, desc="Iteration")
             for step, batch in enumerate(epoch_iterator):
                 self.model.train()
                 batch = tuple(t.to(self.device) for t in batch)
 
-                # logger.info(f"BATCH :: {batch[3]}")
+                # logger.info(f"BATCH :: {[b.size() for b in batch]}")
 
                 inputs = {
                     "text_input_ids": batch[0],
@@ -145,7 +163,7 @@ class Trainer(object):
                     "text_token_type_ids": batch[2],
                     "audio_input": batch[3],
                     "audio_length": batch[4],
-                    "has_audio": batch[5][0],
+                    "has_audio": batch[5],
                     "labels": batch[6],
                 }
                 outputs = self.model(**inputs)
@@ -154,6 +172,8 @@ class Trainer(object):
                 if self.args.gradient_accumulation_steps > 1:
                     loss = loss / self.args.gradient_accumulation_steps
 
+                # loss.backward()
+                loss = loss.mean()
                 loss.backward()
                 tr_loss += loss.item()
 
@@ -171,13 +191,13 @@ class Trainer(object):
                         self.args.logging_steps > 0
                         and global_step % self.args.logging_steps == 0
                     ):
-                        self.evaluate("dev", global_step)
+                        self.evaluate(global_step)
 
                     if (
                         self.args.save_steps > 0
                         and global_step % self.args.save_steps == 0
                     ):
-                        self.save_model(step, optimizer)
+                        self.save_model(epoch, global_step, optimizer)
 
                 if 0 < self.args.max_steps < global_step:
                     epoch_iterator.close()
@@ -189,21 +209,12 @@ class Trainer(object):
 
         return global_step, tr_loss / global_step
 
-    def evaluate(self, mode: Literal["dev", "test"], step):
-        dataset_map = {"dev": self.dev_dataset, "test": self.test_dataset}
-
-        if mode not in ["dev", "test"]:
-            raise Exception("Only dev and test dataset available")
-
-        dataset = dataset_map[mode]
-        eval_sampler = SequentialSampler(dataset)
-        eval_dataloader = DataLoader(
-            dataset, sampler=eval_sampler, batch_size=self.args.eval_batch_size
-        )
+    def evaluate(self, step):
+        eval_dataloader = self._get_data_loader("dev")
 
         # Eval!
-        logger.info("***** Running evaluation on %s dataset *****", mode)
-        logger.info("  Num examples = %d", len(dataset))
+        logger.info("***** Running evaluation on dev dataset *****")
+        logger.info("  Num examples = %d", len(self.dev_dataset))
         logger.info("  Batch size = %d", self.args.eval_batch_size)
 
         eval_loss, nb_eval_steps = 0.0, 0
@@ -220,7 +231,7 @@ class Trainer(object):
                     "text_token_type_ids": batch[2],
                     "audio_input": batch[3],
                     "audio_length": batch[4],
-                    "has_audio": batch[5][0],
+                    "has_audio": batch[5],
                     "labels": batch[6],
                 }
                 tmp_eval_loss, logits = self.model(**inputs)
@@ -262,7 +273,7 @@ class Trainer(object):
             Path(save_dir).mkdir(parents=True, exist_ok=True)
 
             with open(
-                os.path.join(save_dir, f"pred_{mode}_{step}.txt"),
+                os.path.join(save_dir, f"pred_{step}.txt"),
                 "w",
                 encoding="utf-8",
             ) as f:
@@ -297,19 +308,25 @@ class Trainer(object):
 
         return results
 
-    def save_model(self, epoch, optimizer):
+    def save_model(self, epoch, step, optimizer):
         # Save model checkpoint
         save_dir = os.path.join(self.args.model_ckpt_dir, self.args.log_prefix)
         Path(save_dir).mkdir(parents=True, exist_ok=True)
+
+        if isinstance(self.model, nn.DataParallel):
+            model = self.model.module
+        else:
+            model = self.model
 
         # save model
         torch.save(
             {
                 "epoch": epoch,
-                "model_state_dict": self.model.state_dict(),
+                "global_step": step,
+                "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
             },
-            os.path.join(save_dir, f"kounipunc_{epoch}.pt"),
+            os.path.join(save_dir, f"kounipunc_{epoch}_{step}.pt"),
         )
 
         # Save training arguments together with the trained model
@@ -321,6 +338,11 @@ class Trainer(object):
 
     def load_model(self):
         self.model = KoUniPunc(self.args)
+
+        # Apply data parallel for multi-gpu
+        if self.args.parallel and torch.cuda.device_count() > 1:
+            logger.info(f"Using {torch.cuda.device_count()} GPUs...")
+            self.model = nn.DataParallel(self.model)
 
         if self.args.load_model_path is not None:
             # Check whether model exists

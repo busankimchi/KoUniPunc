@@ -43,6 +43,13 @@ if __name__ == "__main__":
         "--task", default="wfc-ko-punc", type=str, help="The name of the task to train"
     )
 
+    """General"""
+    parser.add_argument(
+        "--parallel",
+        action="store_true",
+        help="Allow parallel training with multi gpus",
+    )
+
     """Trainer"""
     parser.add_argument(
         "--log_prefix", default="221127_training", type=str, help="Log prefix"
@@ -54,10 +61,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--train_batch_size", default=2, type=int, help="Batch size for training"
     )
-    
+
     # TODO: 조정해야 함
     parser.add_argument(
-        "--eval_batch_size", default=4, type=int, help="Batch size for evaluation"
+        "--eval_batch_size", default=16, type=int, help="Batch size for evaluation"
     )
 
     """KoUniPunc"""
@@ -169,7 +176,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model_ckpt_dir",
-        default="/mnt/data_storage/kounipunc/ckpt",
+        # default="/mnt/data_storage/kounipunc/ckpt",
+        default="./ckpt",
         type=str,
         help="Path for saving model",
     )
@@ -222,21 +230,23 @@ if __name__ == "__main__":
     parser.add_argument(
         "--warmup_steps", default=0, type=int, help="Linear warmup over warmup_steps."
     )
+
+    # TODO: 조정 필요
     parser.add_argument(
         "--num_train_epochs",
-        default=15.0,
+        default=5.0,
         type=float,
         help="Total number of training epochs to perform.",
     )
 
     """Training General Options"""
     parser.add_argument(
-        "--logging_steps", type=int, default=3600, help="Log every X updates steps."
+        "--logging_steps", type=int, default=10000, help="Log every X updates steps."
     )
     parser.add_argument(
         "--save_steps",
         type=int,
-        default=3600,
+        default=10000,
         help="Save checkpoint every X updates steps.",
     )
 

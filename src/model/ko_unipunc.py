@@ -116,9 +116,9 @@ class KoUniPunc(nn.Module):
         text_attention_mask: Tensor,
         text_token_type_ids: Tensor,
         labels: Tensor,
+        has_audio: Tensor,
         audio_input: Optional[Tensor] = None,
         audio_length: Optional[Tensor] = None,
-        has_audio: bool = False,
     ):
         torch.cuda.empty_cache()
 

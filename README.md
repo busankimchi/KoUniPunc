@@ -27,6 +27,11 @@ Fine tune the model using aggregated data.
 $ python3 -m src.train.main --do_train --do_eval --write_pred --report_as_file
 ```
 
+In a multi-GPU environment,
+```
+$ python3 -m src.train.main --do_train --do_eval --write_pred --report_as_file --parallel
+```
+
 ## Test Data aggregation
 Aggergate test data to fit into the trained model.
 ```

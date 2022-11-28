@@ -222,7 +222,7 @@ def inference(pred_config):
                 "text_token_type_ids": batch[2],
                 "audio_input": batch[3],
                 "audio_length": batch[4],
-                "has_audio": batch[5][0],
+                "has_audio": batch[5],
                 "labels": batch[6],
             }
             outputs = model(**inputs)
@@ -267,7 +267,8 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--model_ckpt_dir",
-        default="/mnt/data_storage/kounipunc/ckpt",
+        # default="/mnt/data_storage/kounipunc/ckpt",
+        default="./ckpt",
         type=str,
         help="Path to save, load model",
     )
