@@ -23,12 +23,16 @@ $ python3 -m src.dataset.data_aggregation
 
 ## Finetune
 Fine tune the model using aggregated data.
-```
-$ python3 -m src.train.main --do_train --do_eval --write_pred --report_as_file --log_prefix 221128_debug
-```
+
+**Flags**
+- `--log_prefix` : Log prefix
+
+- `--amp` : Enable fp16 precisions
+
+- `--parallel` : Enable parallel computing for multi-GPUs
 
 ```
-$ python3 -m src.train.main --do_train --do_eval --write_pred --report_as_file --log_prefix 221128_debug
+$ python3 -m src.train.main --do_train --do_eval --write_pred --report_as_file --amp --parallel --use_virtual --log_prefix 221129_debug_metric_6 
 ```
 
 ## Test Data aggregation
@@ -43,6 +47,11 @@ Inference using the trained model and the aggregated test data.
 $ python3 -m src.inference.main
 ```
 
+## Demo
+This project includes a demo using streamlit.
+```
+$ streamlit run src/demo/main.py
+```
 
 # Results
 - TBD

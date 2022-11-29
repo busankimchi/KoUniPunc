@@ -7,6 +7,9 @@ import logging
 import torch
 from torch import Tensor
 import torch.nn as nn
+from torch.nn import CrossEntropyLoss
+
+from ..parallel import DataParallelCriterion
 
 from .conv_1d_subsampler import Conv1dSubsampler
 from .transformer_fusion_headers import TransformerFusionHeaders
@@ -32,7 +35,7 @@ class KoUniPunc(nn.Module):
         self.device = get_device(args)
 
         label_lst = PUNCTUATION_LABELS
-        num_labels = len(label_lst)
+        self.num_labels = len(label_lst)
 
         # Lexical Encoder
         self.le_config_class, self.le_model_class, _ = LM_MODEL_CLASSES[
@@ -41,7 +44,7 @@ class KoUniPunc(nn.Module):
 
         self.le_config = self.le_config_class.from_pretrained(
             args.lm_model_name_or_path,
-            num_labels=num_labels,
+            num_labels=self.num_labels,
             finetuning_task=args.task,
             id2label={str(i): label for i, label in enumerate(label_lst)},
             label2id={label: i for i, label in enumerate(label_lst)},
@@ -73,7 +76,9 @@ class KoUniPunc(nn.Module):
         ) = SM_MODEL_CLASSES[args.sm_model_type]
 
         self.as_config = self.aa_config_class.from_pretrained(
-            args.sm_model_name_or_path, num_labels=num_labels, finetuning_task=args.task
+            args.sm_model_name_or_path,
+            num_labels=self.num_labels,
+            finetuning_task=args.task,
         )
 
         self.feature_extractor = self.aa_extractor_class.from_pretrained(
@@ -105,7 +110,7 @@ class KoUniPunc(nn.Module):
             args.head_hidden_dim,
             args.head_layer_number,
             args.head_cross_layer_number,
-            num_labels,
+            self.num_labels,
             args.head_num,
             args.head_dropout,
         )
@@ -115,7 +120,6 @@ class KoUniPunc(nn.Module):
         text_input_ids: Tensor,
         text_attention_mask: Tensor,
         text_token_type_ids: Tensor,
-        labels: Tensor,
         audio_input: Optional[Tensor] = None,
         audio_length: Optional[Tensor] = None,
         has_audio: bool = False,
@@ -138,7 +142,7 @@ class KoUniPunc(nn.Module):
 
         # text 만 사용하는 것과 같은 효과
         if self.ignore_wav:
-            loss, logits = self.header_model(text_feature)
+            logits: Tensor = self.header_model(text_feature)
 
         else:
             bsz, _ = text_input_ids.shape[0], text_input_ids.shape[1]
@@ -203,7 +207,9 @@ class KoUniPunc(nn.Module):
             # virtual 사용한다면
             if self.virtual_embedding is not None:
                 # has_audio = torch.tensor(has_audio)
-                has_audio: Tensor = has_audio.clone().detach()
+                has_audio: Tensor = has_audio[0].clone().detach()
+
+                # logger.info(f"AD {has_audio}")
 
                 # expanded_virtual_embedding : (B x virtual_embed_dim x W2V_DIM)
                 expanded_virtual_embedding = self.virtual_embedding.expand(
@@ -300,9 +306,17 @@ class KoUniPunc(nn.Module):
                 "wav_vec": sampled_audio_features,
                 "text_vec_mask": text_attention_mask.to(torch.bool),
                 # "wav_vec_mask": audio_padding_mask,
-                "labels": labels,
             }
 
-            loss, logits = self.header_model(**header_model_input)
+            logits: Tensor = self.header_model(**header_model_input)
 
-        return loss, logits
+        # logger.info(
+        #     f"LOGIT ALL :: {logits.view(-1, self.num_labels)}, {logits.view(-1, self.num_labels).size()}"
+        # )
+        # logger.info(f"LABEL ALL :: {labels.view(-1)}, {labels.view(-1).size()}")
+
+        # loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+
+        # logger.info(f"LOSS ::: {loss}")
+
+        return logits

@@ -6,7 +6,6 @@ import logging
 
 from torch import nn
 from torch import Tensor
-from torch.nn import CrossEntropyLoss
 
 
 logger = logging.getLogger(__name__)
@@ -127,7 +126,6 @@ class TransformerFusionHeaders(nn.Module):
         wav_vec: Optional[Tensor] = None,
         text_vec_mask: Optional[Tensor] = None,
         wav_vec_mask: Optional[Tensor] = None,
-        labels: Optional[Tensor] = None,
     ):
         self_result = self.self_header(text_vec, text_vec_mask)
         # logger.info(f"TF FUSION :: SELF :: {self_result}\t{self_result.size()}")
@@ -138,13 +136,4 @@ class TransformerFusionHeaders(nn.Module):
         logits: Tensor = self_result + cross_result
         # logger.info(f"LOGITS ::: {logits}\t{logits.size()}")
 
-        # logger.info(
-        #     f"LOGIT ALL :: {logits.view(-1, self.num_labels)}, {logits.view(-1, self.num_labels).size()}"
-        # )
-        # logger.info(f"LABEL ALL :: {labels.view(-1)}")
-
-        loss_fct = CrossEntropyLoss()
-        loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-        # logger.info(f"LOSS ::: {loss}")
-
-        return loss, logits
+        return logits

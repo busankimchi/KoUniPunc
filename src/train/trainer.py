@@ -3,7 +3,6 @@ Trainer class for KoUniPunc
 """
 from typing import Literal
 import os
-import shutil
 import logging
 from pathlib import Path
 from tqdm import tqdm, trange
@@ -12,9 +11,16 @@ import pandas as pd
 import numpy as np
 import torch
 from torch import Tensor
+import torch.nn as nn
+from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.cuda.amp import GradScaler, autocast
-from transformers import AdamW, get_linear_schedule_with_warmup
+from torch.optim import AdamW
+
+# from transformers import AdamW, get_linear_schedule_with_warmup
+from transformers import get_linear_schedule_with_warmup
+
+from ..parallel import DataParallelCriterion, DataParallelModel
 
 from ..utils import (
     PUNCTUATION_LABELS,
@@ -45,9 +51,6 @@ class Trainer(object):
         self.test_texts = None
         if args.write_pred:
             self.test_texts = get_eval_texts(args)
-            # Empty the original prediction files
-            if os.path.exists(args.pred_dir):
-                shutil.rmtree(args.pred_dir)
 
     def _init_trainer(self, total_data_len: int):
         loaded_res = self.load_model()
@@ -128,7 +131,7 @@ class Trainer(object):
                 sampler=train_sampler,
                 batch_size=self.args.train_batch_size,
                 # TODO: 변경
-                num_workers=4,
+                num_workers=4 * 2,
                 pin_memory=True,
             )
             return train_dataloader
@@ -139,7 +142,7 @@ class Trainer(object):
                 self.dev_dataset,
                 sampler=eval_sampler,
                 batch_size=self.args.eval_batch_size,
-                num_workers=4,
+                num_workers=4 * 2,
                 pin_memory=True,
             )
             return eval_dataloader
@@ -150,6 +153,7 @@ class Trainer(object):
     def train(self):
         train_dataloader = self._get_data_loader("train")
         optimizer, scheduler, scaler, resume = self._init_trainer(len(train_dataloader))
+        loss_fct = CrossEntropyLoss()
 
         # Train!
         tr_loss, global_step = 0.0, 0
@@ -163,8 +167,8 @@ class Trainer(object):
             epoch_iterator = tqdm(train_dataloader, desc="Iteration")
             for step, batch in enumerate(epoch_iterator):
                 self.model.train()
-                batch = tuple(t.to(self.device) for t in batch)
-                # batch = tuple(t.to(self.device, non_blocking=True) for t in batch)
+                # batch = tuple(t.to(self.device) for t in batch)
+                batch = tuple(t.to(self.device, non_blocking=True) for t in batch)
 
                 # logger.info(f"BATCH :: {batch[3]}")
 
@@ -174,13 +178,18 @@ class Trainer(object):
                     "text_token_type_ids": batch[2],
                     "audio_input": batch[3],
                     "audio_length": batch[4],
-                    "has_audio": batch[5][0],
-                    "labels": batch[6],
+                    "has_audio": batch[5],
                 }
+                labels: Tensor = batch[6]
 
                 with autocast(enabled=self.args.amp):
-                    outputs = self.model(**inputs)
-                    loss: Tensor = outputs[0]
+                    logits: Tensor = self.model(**inputs)
+                    loss: Tensor = loss_fct(
+                        logits.view(-1, len(self.label_lst)), labels.view(-1)
+                    )
+                    # loss: Tensor = outputs[0]
+
+                loss = loss.mean()
 
                 # outputs = self.model(**inputs)
                 # loss: Tensor = outputs[0]
@@ -209,9 +218,9 @@ class Trainer(object):
 
                     if not skip_lr_sched:
                         scheduler.step()
-                    else:
-                        logger.info(f"SKIPPED.. {scale}")
-                        torch.cuda.empty_cache()
+                    # else:
+                    #     logger.info(f"SKIPPED.. {scale}")
+                    # torch.cuda.empty_cache()
 
                     # optimizer.step()
                     # scheduler.step()
@@ -241,8 +250,85 @@ class Trainer(object):
 
         return global_step, tr_loss / global_step
 
+    def _predict_and_report(
+        self,
+        eval_loss: float,
+        preds: np.ndarray,
+        out_label_ids: np.ndarray,
+        step: int,
+        nb_eval_steps: int,
+        is_final: bool = False,
+    ):
+        eval_loss = eval_loss / nb_eval_steps
+        results = {"loss": eval_loss}
+
+        # Slot result
+        preds = np.argmax(preds, axis=2)
+        slot_label_map = {i: label for i, label in enumerate(self.label_lst)}
+        out_label_list = [[] for _ in range(out_label_ids.shape[0])]
+        preds_list = [[] for _ in range(out_label_ids.shape[0])]
+
+        for i in range(out_label_ids.shape[0]):
+            for j in range(out_label_ids.shape[1]):
+                if out_label_ids[i, j] != self.pad_token_label_id:
+                    out_label_list[i].append(slot_label_map[out_label_ids[i][j]])
+                    preds_list[i].append(slot_label_map[preds[i][j]])
+
+        result = compute_metrics(out_label_list, preds_list)
+        results.update(result)
+
+        logger.info("***** Eval results *****")
+        for key in sorted(results.keys()):
+            logger.info("  %s = %s", key, str(results[key]))
+
+        # Get the report for each tag result
+        report = show_report(out_label_list, preds_list, self.args.report_as_file)
+
+        if self.args.report_as_file:
+            save_dir = os.path.join(self.args.save_dir, self.args.log_prefix, "reports")
+            Path(save_dir).mkdir(parents=True, exist_ok=True)
+
+            report_file_name = (
+                f"report_{step}_final.csv"
+                if is_final
+                else f"report_{step}_{nb_eval_steps}.csv"
+            )
+            report_path = os.path.join(save_dir, report_file_name)
+
+            df = pd.DataFrame(report).transpose()
+            df.to_csv(report_path, sep=",")
+
+            logger.info("Saved evaluated results on %s", report_path)
+
+        else:
+            logger.info("\n" + report)
+
+        if self.args.write_pred:
+            save_dir = os.path.join(self.args.save_dir, self.args.log_prefix, "preds")
+            Path(save_dir).mkdir(parents=True, exist_ok=True)
+
+            pred_file_name = (
+                f"pred_{step}_final.csv"
+                if is_final
+                else f"pred_{step}_{nb_eval_steps}.csv"
+            )
+            pred_path = os.path.join(save_dir, pred_file_name)
+
+            with open(pred_path, "w", encoding="utf-8") as f:
+                for text, true_label, pred_label in zip(
+                    self.test_texts, out_label_list, preds_list
+                ):
+                    for t, tl, pl in zip(text, true_label, pred_label):
+                        f.write(f"{t} {tl} {pl}\n")
+                    f.write("\n")
+
+            logger.info("Saved prediction results on %s", pred_path)
+
+        return results
+
     def evaluate(self, step):
         eval_dataloader = self._get_data_loader("dev")
+        loss_fct = CrossEntropyLoss()
 
         # Eval!
         logger.info("***** Running evaluation on dev dataset *****")
@@ -263,97 +349,65 @@ class Trainer(object):
                     "text_token_type_ids": batch[2],
                     "audio_input": batch[3],
                     "audio_length": batch[4],
-                    "has_audio": batch[5][0],
-                    "labels": batch[6],
+                    "has_audio": batch[5],
                 }
+                labels: Tensor = batch[6]
 
                 with autocast(enabled=self.args.amp):
-                    tmp_eval_loss, logits = self.model(**inputs)
+                    logits: Tensor = self.model(**inputs)
+                    loss: Tensor = loss_fct(
+                        logits.view(-1, len(self.label_lst)), labels.view(-1)
+                    )
 
-                eval_loss += tmp_eval_loss.mean().item()
+                eval_loss += loss.mean().item()
 
             nb_eval_steps += 1
 
             # Slot prediction
             if preds is None:
                 preds = logits.detach().cpu().numpy()
-                out_label_ids = inputs["labels"].detach().cpu().numpy()
+                out_label_ids = labels.detach().cpu().numpy()
 
             else:
                 preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
                 out_label_ids = np.append(
-                    out_label_ids,
-                    inputs["labels"].detach().cpu().numpy(),
-                    axis=0,
+                    out_label_ids, labels.detach().cpu().numpy(), axis=0
                 )
 
-        eval_loss = eval_loss / nb_eval_steps
-        results = {"loss": eval_loss}
+            if (
+                self.args.eval_report_steps > 0
+                and nb_eval_steps % self.args.eval_report_steps == 0
+            ):
+                self._predict_and_report(
+                    eval_loss, preds, out_label_ids, step, nb_eval_steps
+                )
 
-        # Slot result
-        preds = np.argmax(preds, axis=2)
-        slot_label_map = {i: label for i, label in enumerate(self.label_lst)}
-        out_label_list = [[] for _ in range(out_label_ids.shape[0])]
-        preds_list = [[] for _ in range(out_label_ids.shape[0])]
-
-        for i in range(out_label_ids.shape[0]):
-            for j in range(out_label_ids.shape[1]):
-                if out_label_ids[i, j] != self.pad_token_label_id:
-                    out_label_list[i].append(slot_label_map[out_label_ids[i][j]])
-                    preds_list[i].append(slot_label_map[preds[i][j]])
-
-        if self.args.write_pred:
-            save_dir = os.path.join(self.args.pred_dir, self.args.log_prefix)
-            Path(save_dir).mkdir(parents=True, exist_ok=True)
-
-            with open(
-                os.path.join(save_dir, f"pred_{step}.txt"), "w", encoding="utf-8"
-            ) as f:
-                for text, true_label, pred_label in zip(
-                    self.test_texts, out_label_list, preds_list
-                ):
-                    for t, tl, pl in zip(text, true_label, pred_label):
-                        f.write(f"{t} {tl} {pl}\n")
-                    f.write("\n")
-
-        result = compute_metrics(out_label_list, preds_list)
-        results.update(result)
-
-        logger.info("***** Eval results *****")
-        for key in sorted(results.keys()):
-            logger.info("  %s = %s", key, str(results[key]))
-
-        # Get the report for each tag result
-        report = show_report(out_label_list, preds_list, self.args.report_as_file)
-
-        if self.args.report_as_file:
-            save_dir = os.path.join(self.args.report_dir, self.args.log_prefix)
-            Path(save_dir).mkdir(parents=True, exist_ok=True)
-
-            report_path = os.path.join(save_dir, f"report_{step}.csv")
-            df = pd.DataFrame(report).transpose()
-            df.to_csv(report_path, sep=",")
-            logger.info("Saved evaluated results!")
-
-        else:
-            logger.info("\n" + report)
+        results = self._predict_and_report(
+            eval_loss, preds, out_label_ids, step, nb_eval_steps
+        )
 
         return results
 
     def save_model(self, step, epoch, optimizer):
         # Save model checkpoint
-        save_dir = os.path.join(self.args.model_ckpt_dir, self.args.log_prefix)
+        save_dir = os.path.join(self.args.save_dir, self.args.log_prefix, "ckpt")
         Path(save_dir).mkdir(parents=True, exist_ok=True)
+
+        if isinstance(self.model, nn.DataParallel):
+            # if isinstance(self.model, DataParallelModel):
+            model = self.model.module
+        else:
+            model = self.model
 
         # save model
         torch.save(
             {
                 "epoch": epoch,
                 "step": step,
-                "model_state_dict": self.model.state_dict(),
+                "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
             },
-            os.path.join(save_dir, f"kounipunc_{epoch}.pt"),
+            os.path.join(save_dir, f"kounipunc_{epoch}_{step}.pt"),
         )
 
         # Save training arguments together with the trained model
@@ -361,10 +415,15 @@ class Trainer(object):
             self.args,
             os.path.join(save_dir, "kounipunc_args.bin"),
         )
-        logger.info("Saving model checkpoint to %s", self.args.model_ckpt_dir)
+        logger.info("Saving model checkpoint to %s", save_dir)
 
     def load_model(self):
         self.model = KoUniPunc(self.args)
+
+        if self.args.parallel and torch.cuda.device_count() > 1:
+            self.model = nn.DataParallel(self.model)
+            # self.model = DataParallelModel(self.model)
+
         self.model.to(self.device)
 
         if self.args.load_model_path is not None:

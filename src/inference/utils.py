@@ -16,22 +16,20 @@ logger = logging.getLogger(__name__)
 
 
 def get_args(pred_config):
-    return torch.load(os.path.join(pred_config.model_ckpt_dir, "training_args.bin"))
+    return torch.load(os.path.join(pred_config.model_ckpt_dir, "kounipunc_args.bin"))
 
 
 def load_model(pred_config, args, device):
     # Check whether model exists
-    if not os.path.exists(pred_config.model_ckpt_dir):
+    if not os.path.exists(pred_config.load_model_path):
         raise Exception("Model doesn't exists! Train first!")
 
     try:
         # Config will be automatically loaded from model_ckpt_dir
         model = KoUniPunc(args)
 
-        state_dict = torch.load(
-            os.path.join(pred_config.model_ckpt_dir, "kounipunc_state.pt")
-        )
-        model.load_state_dict(state_dict)
+        model_pt = torch.load(pred_config.load_model_path)
+        model.load_state_dict(model_pt["model_state_dict"])
 
         model.to(device)
         model.eval()
@@ -54,18 +52,24 @@ def read_input_file(pred_config):
     return texts, audio_paths
 
 
+def restore_punctuation_by_line(words, preds):
+    line = ""
+
+    for word, pred in zip(words, preds):
+        if pred == "O":
+            line = line + word + " "
+        else:
+            line = line + word + REVERSE_PUNCTUATIONS[pred] + " "
+
+    return line.strip()
+
+
 def save_output_file(pred_config, lines, preds_list):
-    filename, ext = os.path.splitext(pred_config.input_file)
+    filename, _ = os.path.splitext(pred_config.input_file)
 
-    with open(f"{filename}_out" + ext, "w", encoding="utf-8") as f:
+    with open(f"{filename}_out.txt", "w", encoding="utf-8") as f:
         for words, preds in zip(lines, preds_list):
-            line = ""
-            for word, pred in zip(words, preds):
-                if pred == "O":
-                    line = line + word + " "
-                else:
-                    line = line + word + REVERSE_PUNCTUATIONS[pred] + " "
+            line = restore_punctuation_by_line(words, preds)
+            f.write(f"{line}\n")
 
-            f.write(f"{line.strip()}\n")
-
-    logger.info("Prediction Done!")
+    logger.info("*** Prediction Done! ***")
