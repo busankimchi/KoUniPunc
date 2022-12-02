@@ -11,8 +11,8 @@ import torch.nn.functional as F
 import torchaudio
 from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
 
-from ..inference.main import convert_text_to_features
-from ..inference.utils import get_args, load_model, restore_punctuation_by_line
+from .main import convert_text_to_features
+from .utils import get_args, load_model, restore_punctuation_by_line
 from ..utils import PUNCTUATION_LABELS, get_device, init_logger, load_tokenizer
 
 device = get_device()

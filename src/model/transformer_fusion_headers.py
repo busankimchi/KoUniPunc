@@ -41,10 +41,6 @@ class TransformerCrossHeaders(nn.Module):
         if m is None:
             m = x
 
-        # logger.info(f"TF CROSS :: {x}\t{m}\t{x_mask}\t{m_mask}")
-        # logger.info(
-        #     f"TF CROSS SIZE :: {x.size()}\t{m.size()}\t{x_mask.size()}\t{m_mask.size()}"
-        # )
         x = self.transformer_head(
             x.transpose(0, 1),
             m.transpose(0, 1),
@@ -77,17 +73,10 @@ class TransformerHeaders(nn.Module):
         self.fc = nn.Linear(hidden_size, output_size)
 
     def forward(self, x: Tensor, x_mask: Optional[Tensor] = None):
-        # logger.info(f"TF HEADER :: X :: {x}\t{x_mask}")
-
         x = self.transformer_head(
             x.transpose(0, 1), src_key_padding_mask=x_mask
         ).transpose(0, 1)
-
-        # logger.info(f"TF HEADER :: X AFTER HEAD :: {x}")
-
         x = self.fc(x)
-
-        # logger.info(f"TF HEADER :: X AFTER LINEAR :: {x}\t{x.size()}")
 
         return x
 
@@ -128,12 +117,7 @@ class TransformerFusionHeaders(nn.Module):
         wav_vec_mask: Optional[Tensor] = None,
     ):
         self_result = self.self_header(text_vec, text_vec_mask)
-        # logger.info(f"TF FUSION :: SELF :: {self_result}\t{self_result.size()}")
-
         cross_result = self.cross_header(text_vec, wav_vec, text_vec_mask, wav_vec_mask)
-        # logger.info(f"TF FUSION :: CROSS :: {cross_result}\t{cross_result.size()}")
-
         logits: Tensor = self_result + cross_result
-        # logger.info(f"LOGITS ::: {logits}\t{logits.size()}")
 
         return logits

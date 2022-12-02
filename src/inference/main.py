@@ -13,8 +13,6 @@ from transformers.tokenization_utils import PreTrainedTokenizer
 
 from ..dataset.welfare_call_dataset import InputFeature, WelfareCallDataset
 
-# from transformers.feature_extraction_sequence_utils import SequenceFeatureExtractor
-
 from .utils import get_args, load_model, read_input_file, save_output_file
 from ..utils import init_logger, load_tokenizer, get_device, PUNCTUATION_LABELS
 
@@ -182,16 +180,20 @@ if __name__ == "__main__":
     # TODO: 양식 변경
     parser.add_argument(
         "--input_file",
-        default="sample_pred_punc.txt",
+        default="sample_pred_punc.jsonl",
         type=str,
         help="Input file for prediction",
     )
 
     parser.add_argument(
-        "--model_ckpt_dir",
-        default="/mnt/storage/kounipunc/ckpt",
+        "--model_ckpt_path",
+        default="221129_training",
         type=str,
-        help="Path to save, load model",
+        help="Model checkpoint path",
+    )
+
+    parser.add_argument(
+        "--model_arg_path", default="221129_training", type=str, help="Model arg path"
     )
 
     parser.add_argument(

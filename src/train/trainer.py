@@ -16,8 +16,6 @@ from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.cuda.amp import GradScaler, autocast
 from torch.optim import AdamW
-
-# from transformers import AdamW, get_linear_schedule_with_warmup
 from transformers import get_linear_schedule_with_warmup
 
 from ..parallel import DataParallelCriterion, DataParallelModel
@@ -167,10 +165,7 @@ class Trainer(object):
             epoch_iterator = tqdm(train_dataloader, desc="Iteration")
             for step, batch in enumerate(epoch_iterator):
                 self.model.train()
-                # batch = tuple(t.to(self.device) for t in batch)
                 batch = tuple(t.to(self.device, non_blocking=True) for t in batch)
-
-                # logger.info(f"BATCH :: {batch[3]}")
 
                 inputs = {
                     "text_input_ids": batch[0],
@@ -187,20 +182,13 @@ class Trainer(object):
                     loss: Tensor = loss_fct(
                         logits.view(-1, len(self.label_lst)), labels.view(-1)
                     )
-                    # loss: Tensor = outputs[0]
 
                 loss = loss.mean()
-
-                # outputs = self.model(**inputs)
-                # loss: Tensor = outputs[0]
-
-                # logger.info(f"LOSS : {loss}")
 
                 if self.args.gradient_accumulation_steps > 1:
                     loss = loss / self.args.gradient_accumulation_steps
 
                 scaler.scale(loss).backward()
-                # loss.backward()
                 tr_loss += loss.item()
 
                 if (step + 1) % self.args.gradient_accumulation_steps == 0:
@@ -218,12 +206,6 @@ class Trainer(object):
 
                     if not skip_lr_sched:
                         scheduler.step()
-                    # else:
-                    #     logger.info(f"SKIPPED.. {scale}")
-                    # torch.cuda.empty_cache()
-
-                    # optimizer.step()
-                    # scheduler.step()
 
                     self.model.zero_grad()
                     global_step += 1

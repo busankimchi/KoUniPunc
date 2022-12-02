@@ -16,19 +16,19 @@ logger = logging.getLogger(__name__)
 
 
 def get_args(pred_config):
-    return torch.load(os.path.join(pred_config.model_ckpt_dir, "kounipunc_args.bin"))
+    return torch.load(pred_config.model_arg_path)
 
 
 def load_model(pred_config, args, device):
     # Check whether model exists
-    if not os.path.exists(pred_config.load_model_path):
+    if not os.path.exists(pred_config.model_ckpt_path):
         raise Exception("Model doesn't exists! Train first!")
 
     try:
         # Config will be automatically loaded from model_ckpt_dir
         model = KoUniPunc(args)
 
-        model_pt = torch.load(pred_config.load_model_path)
+        model_pt = torch.load(pred_config.model_ckpt_path)
         model.load_state_dict(model_pt["model_state_dict"])
 
         model.to(device)

@@ -83,13 +83,13 @@ if __name__ == "__main__":
 
     """Logging Options"""
     parser.add_argument(
-        "--logging_steps", type=int, default=10000, help="Log every X updates steps."
+        "--logging_steps", type=int, default=8000, help="Log every X updates steps."
     )
 
     parser.add_argument(
         "--save_steps",
         type=int,
-        default=10000,
+        default=8000,
         help="Save checkpoint every X updates steps.",
     )
 
