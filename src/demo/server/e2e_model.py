@@ -2,7 +2,8 @@
 End-to-End process
 """
 import os
-import argparse
+from typing import List
+import logging
 
 import numpy as np
 import torch
@@ -11,23 +12,16 @@ import torch.nn.functional as F
 import torchaudio
 from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
 
-from .main import convert_text_to_features
-from .utils import get_args, load_model, restore_punctuation_by_line
-from ..utils import PUNCTUATION_LABELS, get_device, init_logger, load_tokenizer
-
-device = get_device()
-
-
-def get_asr_models():
-    processor = Wav2Vec2Processor.from_pretrained("kresnik/wav2vec2-large-xlsr-korean")
-    model = Wav2Vec2ForCTC.from_pretrained("kresnik/wav2vec2-large-xlsr-korean").to(
-        device
-    )
-
-    return processor, model
+from ...inference.utils import restore_punctuation_by_line, convert_text_to_features
+from ...utils import PUNCTUATION_LABELS, get_device, init_logger, load_tokenizer
+from .config import MODEL_CKPT_PATH, MODEL_ARG_PATH
+from ...model.ko_unipunc import KoUniPunc
 
 
-def load_audio(input_audio: str):
+logger = logging.getLogger(__name__)
+
+
+def load_audio(input_audio: str) -> Tensor:
     speech_array, sampling_rate = torchaudio.load(input_audio)
 
     if sampling_rate != 16000:
@@ -38,8 +32,11 @@ def load_audio(input_audio: str):
     return speech_array
 
 
-def asr_process(speech_array):
-    processor, model = get_asr_models()
+def asr_process(speech_array: Tensor, device) -> str:
+    processor = Wav2Vec2Processor.from_pretrained("kresnik/wav2vec2-large-xlsr-korean")
+    model = Wav2Vec2ForCTC.from_pretrained("kresnik/wav2vec2-large-xlsr-korean").to(
+        device
+    )
 
     inputs = processor(
         speech_array, sampling_rate=16000, return_tensors="pt", padding="longest"
@@ -57,11 +54,35 @@ def asr_process(speech_array):
     return transcription
 
 
-def cleanup_transcription(transcription):
+def cleanup_transcription(transcription) -> str:
     return transcription
 
 
-def convert_to_dataset(args, pad_token_label_id, transcription, speech_array):
+def load_punc_model(args, device) -> KoUniPunc:
+    # Check whether model exists
+    if not os.path.exists(MODEL_CKPT_PATH):
+        raise Exception("Model doesn't exists! Train first!")
+
+    try:
+        # Config will be automatically loaded from model_ckpt_dir
+        model = KoUniPunc(args)
+
+        model_pt = torch.load(MODEL_CKPT_PATH)
+        model.load_state_dict(model_pt["model_state_dict"])
+
+        model.to(device)
+        model.eval()
+        logger.info("***** Model Loaded *****")
+
+    except:
+        raise Exception("Some model files might be missing...")
+
+    return model
+
+
+def convert_to_dataset(
+    args, pad_token_label_id: int, transcription: str, speech_array: Tensor
+):
     tokenizer = load_tokenizer(args)
 
     (
@@ -87,15 +108,15 @@ def convert_to_dataset(args, pad_token_label_id, transcription, speech_array):
         audio_input,
         torch.tensor(audio_length, dtype=torch.long),
         True,
-        slot_label_mask,
+        np.array(slot_label_mask),
     )
 
 
-def punc_process(pred_config, args, transcription, speech_array):
+def punc_process(args, transcription: str, speech_array: Tensor, device) -> List[str]:
     label_lst = PUNCTUATION_LABELS
     pad_token_label_id = torch.nn.CrossEntropyLoss().ignore_index
 
-    model = load_model(pred_config, args, device)
+    model = load_punc_model(args, device)
 
     (
         text_input_ids,
@@ -119,7 +140,6 @@ def punc_process(pred_config, args, transcription, speech_array):
         logits: Tensor = model(**inputs)
 
         preds = logits.detach().cpu().numpy()
-        slot_label_mask = np.array(slot_label_mask)
 
     preds: np.ndarray = np.argmax(preds)
     slot_label_map = {i: label for i, label in enumerate(label_lst)}
@@ -132,60 +152,18 @@ def punc_process(pred_config, args, transcription, speech_array):
     return pred_list
 
 
-def save_output_file(pred_config, transcription, pred_list):
-    filename, _ = os.path.splitext(pred_config.input_audio_file)
-
-    with open(f"{filename}_out.txt", "w", encoding="utf-8") as f:
-        line = restore_punctuation_by_line(transcription, pred_list)
-        f.write(f"{line}\n")
-
-        return line
-
-
-def e2e(pred_config):
-    args = get_args(pred_config)
-
-    speech_array = load_audio(pred_config.input_audio_file)
-    transcription = asr_process(speech_array)
-    transcription = cleanup_transcription(transcription)
-
-    pred_list = punc_process(pred_config, args, transcription, speech_array)
-
-    # Write to output file
-    line = save_output_file(pred_config, transcription, pred_list)
-
-
-if __name__ == "__main__":
+def e2e(input_audio_file: str) -> str:
     init_logger()
 
-    parser = argparse.ArgumentParser()
+    args = torch.load(MODEL_ARG_PATH)
 
-    parser.add_argument(
-        "--input_audio_file",
-        default=None,
-        type=str,
-        help="Input file for e2e prediction",
-    )
+    device = get_device(args)
 
-    parser.add_argument(
-        "--e2e_prefix", default="221129_e2e", type=str, help="E2E prefix"
-    )
+    speech_array = load_audio(input_audio_file)
+    transcription = asr_process(speech_array, device)
+    # transcription = cleanup_transcription(transcription)
 
-    parser.add_argument(
-        "--output_dir",
-        default="/mnt/storage/kounipunc/e2e",
-        type=str,
-        help="Output dir for e2e prediction",
-    )
+    pred_list = punc_process(args, transcription, speech_array, device)
 
-    parser.add_argument(
-        "--model_ckpt_dir", default=None, type=str, help="Path to save, load model"
-    )
-
-    parser.add_argument(
-        "--no_cuda", action="store_true", help="Avoid using CUDA when available"
-    )
-
-    pred_config = parser.parse_args()
-
-    e2e(pred_config)
+    line = restore_punctuation_by_line(transcription, pred_list)
+    return line

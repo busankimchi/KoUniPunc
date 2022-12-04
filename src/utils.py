@@ -1,8 +1,7 @@
 """
 Utils for training and models
 """
-from typing import Tuple, Dict, Literal, List
-from dataclasses import dataclass
+from typing import Tuple, Dict, Literal
 import os
 import random
 import logging
@@ -30,29 +29,18 @@ from transformers import (
     ElectraModel,
     Wav2Vec2Config,
     Wav2Vec2Model,
-    # Wav2Vec2FeatureExtractor,
     Wav2Vec2Processor,
     Wav2Vec2PreTrainedModel,
 )
 from transformers.modeling_utils import PretrainedConfig, PreTrainedModel
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-# from transformers.feature_extraction_sequence_utils import SequenceFeatureExtractor
-
 from .tokenization_kobert import KoBertTokenizer
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class PredictResult:
-    predict_result: Tensor  # B x T
-    predict_logit: Tensor  # B x T x C
-
-
-# VIRTUAL_EMB_LEN = 1
 W2V_DIM = 768
-
 
 LMModelClassType = Tuple[PretrainedConfig, PreTrainedModel, PreTrainedTokenizer]
 

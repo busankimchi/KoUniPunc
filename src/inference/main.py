@@ -9,79 +9,23 @@ import numpy as np
 import torch
 from torch import Tensor
 from torch.utils.data import DataLoader, SequentialSampler
-from transformers.tokenization_utils import PreTrainedTokenizer
 
 from ..dataset.welfare_call_dataset import InputFeature, WelfareCallDataset
 
-from .utils import get_args, load_model, read_input_file, save_output_file
+from .utils import (
+    convert_text_to_features,
+    get_args,
+    load_model,
+    read_input_file,
+    save_output_file,
+)
 from ..utils import init_logger, load_tokenizer, get_device, PUNCTUATION_LABELS
 
 logger = logging.getLogger(__name__)
 
 
-def convert_text_to_features(
-    text,
-    pred_config,
-    args,
-    tokenizer: PreTrainedTokenizer,
-    pad_token_label_id: int,
-    cls_token_segment_id=0,
-    pad_token_segment_id=0,
-    sequence_a_segment_id=0,
-    mask_padding_with_zero=True,
-):
-    # Setting based on the current model type
-    cls_token = tokenizer.cls_token
-    sep_token = tokenizer.sep_token
-    unk_token = tokenizer.unk_token
-    pad_token_id = tokenizer.pad_token_id
-
-    tokens = []
-    slot_label_mask = []
-    for word in text:
-        word_tokens = tokenizer.tokenize(word)
-        if not word_tokens:
-            word_tokens = [unk_token]  # For handling the bad-encoded word
-        tokens.extend(word_tokens)
-        # Use the real label id for the first token of the word, and padding ids for the remaining tokens
-        slot_label_mask.extend([0] + [pad_token_label_id] * (len(word_tokens) - 1))
-
-    # Account for [CLS] and [SEP]
-    special_tokens_count = 2
-    if len(tokens) > args.max_seq_len - special_tokens_count:
-        tokens = tokens[: (args.max_seq_len - special_tokens_count)]
-        slot_label_mask = slot_label_mask[: (args.max_seq_len - special_tokens_count)]
-
-    # Add [SEP] token
-    tokens += [sep_token]
-    token_type_ids = [sequence_a_segment_id] * len(tokens)
-    slot_label_mask += [pad_token_label_id]
-
-    # Add [CLS] token
-    tokens = [cls_token] + tokens
-    token_type_ids = [cls_token_segment_id] + token_type_ids
-    slot_label_mask = [pad_token_label_id] + slot_label_mask
-
-    input_ids = tokenizer.convert_tokens_to_ids(tokens)
-    org_text_length = len(input_ids)
-
-    # The mask has 1 for real tokens and 0 for padding tokens. Only real tokens are attended to.
-    attention_mask = [1 if mask_padding_with_zero else 0] * org_text_length
-
-    # Zero-pad up to the sequence length.
-    padding_length = args.max_seq_len - org_text_length
-    input_ids = input_ids + ([pad_token_id] * padding_length)
-    attention_mask = attention_mask + (
-        [0 if mask_padding_with_zero else 1] * padding_length
-    )
-    token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
-    slot_label_mask = slot_label_mask + ([pad_token_label_id] * padding_length)
-
-    return input_ids, attention_mask, token_type_ids, slot_label_mask
-
-
 def convert_input_file_to_dataset(
-    texts: list, audio_paths: list, pred_config, args, pad_token_label_id: int
+    texts: list, audio_paths: list, args, pad_token_label_id: int
 ):
     tokenizer = load_tokenizer(args)
 
@@ -92,9 +36,7 @@ def convert_input_file_to_dataset(
             text_attention_mask,
             text_token_type_ids,
             slot_label_mask,
-        ) = convert_text_to_features(
-            text, pred_config, args, tokenizer, pad_token_label_id
-        )
+        ) = convert_text_to_features(text, args, tokenizer, pad_token_label_id)
 
         features.append(
             InputFeature(
@@ -123,7 +65,7 @@ def inference(pred_config):
 
     texts, audio_paths = read_input_file(pred_config)
     dataset = convert_input_file_to_dataset(
-        texts, audio_paths, pred_config, args, pad_token_label_id
+        texts, audio_paths, args, pad_token_label_id
     )
 
     # Predict

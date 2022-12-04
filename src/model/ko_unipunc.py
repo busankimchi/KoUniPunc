@@ -8,8 +8,6 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 
-from ..parallel import DataParallelCriterion
-
 from .conv_1d_subsampler import Conv1dSubsampler
 from .transformer_fusion_headers import TransformerFusionHeaders
 from ..utils import (
@@ -132,9 +130,7 @@ class KoUniPunc(nn.Module):
 
         text_feature = self.lexical_encoder(**lexical_encoder_inputs)
         text_feature = text_feature.last_hidden_state
-
-        # logger.info(f"TEXT FEATURE :: {text_feature}")
-
+        
         # text 만 사용하는 것과 같은 효과
         if self.ignore_wav:
             logits: Tensor = self.header_model(text_feature)

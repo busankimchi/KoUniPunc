@@ -1,8 +1,12 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
+import requests
 
-from ..inference.e2e import e2e
+
+def inference(uploaded_file):
+    requests.post("http://server:8080")
+
+    return "HELLO@"
+
 
 st.title("KoUniPunc Demo")
 
@@ -16,6 +20,6 @@ if uploaded_file is not None:
         con = st.container()
         con.caption("Result")
 
-        e2e(bytes_data)
+        result = inference(uploaded_file)
 
-        con.write("hello~")
+        con.write(result)

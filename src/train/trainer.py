@@ -18,8 +18,6 @@ from torch.cuda.amp import GradScaler, autocast
 from torch.optim import AdamW
 from transformers import get_linear_schedule_with_warmup
 
-from ..parallel import DataParallelCriterion, DataParallelModel
-
 from ..utils import (
     PUNCTUATION_LABELS,
     get_device,
@@ -365,7 +363,7 @@ class Trainer(object):
                 )
 
         results = self._predict_and_report(
-            eval_loss, preds, out_label_ids, step, nb_eval_steps
+            eval_loss, preds, out_label_ids, step, nb_eval_steps, True
         )
 
         return results

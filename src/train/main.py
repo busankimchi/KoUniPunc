@@ -126,26 +126,6 @@ if __name__ == "__main__":
         help="Save directory for ckpt, preds, and reports",
     )
 
-    # parser.add_argument(
-    #     "--model_ckpt_dir",
-    #     default="/mnt/storage/kounipunc/ckpt",
-    #     # default="./ckpt",
-    #     type=str,
-    #     help="Path for saving model",
-    # )
-    # parser.add_argument(
-    #     "--pred_dir",
-    #     default="/mnt/storage/kounipunc/preds",
-    #     type=str,
-    #     help="The prediction file dir",
-    # )
-    # parser.add_argument(
-    #     "--report_dir",
-    #     default="/mnt/storage/kounipunc/report",
-    #     type=str,
-    #     help="Report dir",
-    # )
-
     parser.add_argument(
         "--train_file", default="train.jsonl", type=str, help="Train file"
     )
