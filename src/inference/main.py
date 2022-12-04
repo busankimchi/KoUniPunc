@@ -54,11 +54,12 @@ def convert_input_file_to_dataset(
 def inference(pred_config):
     # load model and args
     args = get_args(pred_config)
+
+    logger.info(args)
+
     device = get_device(pred_config)
     model = load_model(pred_config, args, device)
     label_lst = PUNCTUATION_LABELS
-
-    logger.info(args)
 
     # Convert input file to TensorDataset
     pad_token_label_id = torch.nn.CrossEntropyLoss().ignore_index
@@ -119,23 +120,27 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
 
-    # TODO: 양식 변경
     parser.add_argument(
         "--input_file",
-        default="sample_pred_punc.jsonl",
+        default="./data/sample/sample_pred_punc.jsonl",
         type=str,
         help="Input file for prediction",
     )
 
     parser.add_argument(
         "--model_ckpt_path",
-        default="221129_training",
+        # default="./kounipunc/kounipunc_1_141303.pt",
+        default="/mnt/storage/kounipunc/221129_training/ckpt/kounipunc_1_141303.pt",
         type=str,
         help="Model checkpoint path",
     )
 
     parser.add_argument(
-        "--model_arg_path", default="221129_training", type=str, help="Model arg path"
+        "--model_arg_path",
+        # default="./kounipunc/kounipunc_args.bin",
+        default="/mnt/storage/kounipunc/221129_training/ckpt/kounipunc_args.bin",
+        type=str,
+        help="Model arg path",
     )
 
     parser.add_argument(

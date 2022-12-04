@@ -1,3 +1,6 @@
+"""
+Conv1d sub sampler
+"""
 from typing import List, Optional
 import logging
 

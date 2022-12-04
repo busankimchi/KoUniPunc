@@ -1,4 +1,4 @@
-FROM nvidia/cuda:11.0-cudnn8-devel-ubuntu18.04
+FROM nvidia/cuda:11.6.2-cudnn8-runtime-ubuntu20.04
 
 WORKDIR /server
 
@@ -34,11 +34,15 @@ RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86
     /opt/conda/bin/conda clean -tipsy && \
     ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
     echo ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc &&
-    
+
 # copy all necessary files
 COPY . .
 
+RUN /bin/bash -c "conda env create --file env.yaml"
+RUN echo "conda activate punc-venv" >> ~/.bashrc
+RUN /bin/bash -c "source activate punc-venv" 
+
 RUN chmod +x /server/entrypoint_server.sh
-EXPOSE 80
+EXPOSE 8080
 
 ENTRYPOINT [ "sh", "/server/entrypoint_server.sh" ]

@@ -2,12 +2,6 @@ import streamlit as st
 import requests
 
 
-def inference(uploaded_file) -> str:
-    result:str = requests.post("http://server:8080", files={"file": uploaded_file})
-
-    return result
-
-
 st.title("KoUniPunc Demo")
 
 uploaded_file = st.file_uploader("Choose a file")
@@ -20,5 +14,5 @@ if uploaded_file is not None:
         con = st.container()
         con.caption("Result")
 
-        result = inference(uploaded_file)
+        result: str = requests.post("http://server:8080", files={"file": uploaded_file})
         con.write(result)

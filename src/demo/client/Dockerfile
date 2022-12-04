@@ -1,16 +1,16 @@
-FROM python:3.10
+FROM python:3.9
 
-WORKDIR /server
+WORKDIR /client
 
 RUN apt-get update
-COPY requirements.txt /server/requirements.txt
+COPY requirements.txt /client/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 RUN apt install -y default-jre
 
 COPY . .
 
-RUN chmod +x /server/entrypoint_server.sh
-EXPOSE 80
+RUN chmod +x /client/entrypoint_client.sh
+EXPOSE 8501
 
-ENTRYPOINT python3 demo.py
+ENTRYPOINT [ "sh", "/client/entrypoint_client.sh" ]

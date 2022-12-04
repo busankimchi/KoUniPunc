@@ -51,9 +51,9 @@ $ python3 -m src.inference.main
 
 ## Demo
 This project includes a demo using streamlit.
-```
-$ streamlit run src/demo/main.py
-```
+
+Please refer to [DEMO.md]()
+
 
 # Results
 - TBD

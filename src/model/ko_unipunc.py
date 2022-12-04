@@ -16,7 +16,6 @@ from ..utils import (
     LM_MODEL_CLASSES,
     SM_MODEL_CLASSES,
     get_device,
-    lengths_to_padding_mask,
 )
 
 

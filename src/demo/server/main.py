@@ -12,9 +12,7 @@ from .e2e_model import e2e_inference
 
 logger = logging.getLogger(__name__)
 
-
 app = FastAPI(title="KoUniPunc server", version="0.0.1", description="KoUniPunc server")
-
 
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
@@ -32,7 +30,7 @@ async def inference(file: Union[UploadFile, None] = None):
     if not file:
         logger.error("No file.")
         return JSONResponse(status_code=460, content="No file.")
-    
+
     res = e2e_inference(file)
     return res
 

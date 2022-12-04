@@ -4,17 +4,23 @@ services:
   server:
     container_name: server
     build:
-      context: ./server
-      dockerfile: Dockerfile
+      context: ../
+      dockerfile: demo/server/Dockerfile
 
     image: tebahsoft/kounipunc-backend
     ports:
       - 8080:8080
-    
+
     volumes:
       - /mnt/storage/kounipunc/:/kounipunc/
 
-    
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [ gpu ]
+
   client:
     container_name: client
     build:
