@@ -20,5 +20,6 @@ sample_pred_punc_out.txt
 archive/
 temp/
 test_data/
+kounipunc/
 
 .env

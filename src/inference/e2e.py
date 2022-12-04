@@ -2,6 +2,8 @@
 End-to-End process
 """
 import os
+from typing import List
+import logging
 import argparse
 
 import numpy as np
@@ -11,23 +13,20 @@ import torch.nn.functional as F
 import torchaudio
 from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
 
-from .main import convert_text_to_features
-from .utils import get_args, load_model, restore_punctuation_by_line
+from ..model.ko_unipunc import KoUniPunc
+from .utils import (
+    get_args,
+    load_model,
+    restore_punctuation_by_line,
+    convert_text_to_features,
+)
 from ..utils import PUNCTUATION_LABELS, get_device, init_logger, load_tokenizer
 
-device = get_device()
+
+logger = logging.getLogger(__name__)
 
 
-def get_asr_models():
-    processor = Wav2Vec2Processor.from_pretrained("kresnik/wav2vec2-large-xlsr-korean")
-    model = Wav2Vec2ForCTC.from_pretrained("kresnik/wav2vec2-large-xlsr-korean").to(
-        device
-    )
-
-    return processor, model
-
-
-def load_audio(input_audio: str):
+def load_audio(input_audio: str) -> Tensor:
     speech_array, sampling_rate = torchaudio.load(input_audio)
 
     if sampling_rate != 16000:
@@ -38,8 +37,11 @@ def load_audio(input_audio: str):
     return speech_array
 
 
-def asr_process(speech_array):
-    processor, model = get_asr_models()
+def asr_process(speech_array: Tensor, device) -> str:
+    processor = Wav2Vec2Processor.from_pretrained("kresnik/wav2vec2-large-xlsr-korean")
+    model = Wav2Vec2ForCTC.from_pretrained("kresnik/wav2vec2-large-xlsr-korean").to(
+        device
+    )
 
     inputs = processor(
         speech_array, sampling_rate=16000, return_tensors="pt", padding="longest"
@@ -61,7 +63,9 @@ def cleanup_transcription(transcription):
     return transcription
 
 
-def convert_to_dataset(args, pad_token_label_id, transcription, speech_array):
+def convert_to_dataset(
+    args, pad_token_label_id: int, transcription: str, speech_array: Tensor
+):
     tokenizer = load_tokenizer(args)
 
     (
@@ -87,15 +91,15 @@ def convert_to_dataset(args, pad_token_label_id, transcription, speech_array):
         audio_input,
         torch.tensor(audio_length, dtype=torch.long),
         True,
-        slot_label_mask,
+        np.array(slot_label_mask),
     )
 
 
-def punc_process(pred_config, args, transcription, speech_array):
+def punc_process(
+    args, transcription: str, speech_array: Tensor, model: KoUniPunc
+) -> List[str]:
     label_lst = PUNCTUATION_LABELS
     pad_token_label_id = torch.nn.CrossEntropyLoss().ignore_index
-
-    model = load_model(pred_config, args, device)
 
     (
         text_input_ids,
@@ -117,9 +121,7 @@ def punc_process(pred_config, args, transcription, speech_array):
             "has_audio": has_audio,
         }
         logits: Tensor = model(**inputs)
-
         preds = logits.detach().cpu().numpy()
-        slot_label_mask = np.array(slot_label_mask)
 
     preds: np.ndarray = np.argmax(preds)
     slot_label_map = {i: label for i, label in enumerate(label_lst)}
@@ -144,15 +146,17 @@ def save_output_file(pred_config, transcription, pred_list):
 
 def e2e(pred_config):
     args = get_args(pred_config)
+    device = get_device(args)
 
     speech_array = load_audio(pred_config.input_audio_file)
-    transcription = asr_process(speech_array)
-    transcription = cleanup_transcription(transcription)
+    transcription = asr_process(speech_array, device)
+    # transcription = cleanup_transcription(transcription)
 
-    pred_list = punc_process(pred_config, args, transcription, speech_array)
+    model = load_model(pred_config, args, device)
+    pred_list = punc_process(args, transcription, speech_array, model)
 
     # Write to output file
-    line = save_output_file(pred_config, transcription, pred_list)
+    save_output_file(pred_config, transcription, pred_list)
 
 
 if __name__ == "__main__":
@@ -168,7 +172,19 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--e2e_prefix", default="221129_e2e", type=str, help="E2E prefix"
+        "--model_ckpt_path",
+        # default="/mnt/storage/kounipunc/221129_training/ckpt/kounipunc_1_141303.pt",
+        default="/mnt/storage/kounipunc/221129_training/ckpt/kounipunc_1_141303.pt",
+        type=str,
+        help="Model checkpoint path",
+    )
+
+    parser.add_argument(
+        "--model_arg_path",
+        # default="/mnt/storage/kounipunc/221129_training/ckpt/kounipunc_args.bin",
+        default="/mnt/storage/kounipunc/221129_training/ckpt/kounipunc_args.bin",
+        type=str,
+        help="Model arg path",
     )
 
     parser.add_argument(
@@ -176,10 +192,6 @@ if __name__ == "__main__":
         default="/mnt/storage/kounipunc/e2e",
         type=str,
         help="Output dir for e2e prediction",
-    )
-
-    parser.add_argument(
-        "--model_ckpt_dir", default=None, type=str, help="Path to save, load model"
     )
 
     parser.add_argument(

@@ -130,10 +130,15 @@ class KoUniPunc(nn.Module):
 
         text_feature = self.lexical_encoder(**lexical_encoder_inputs)
         text_feature = text_feature.last_hidden_state
-        
+
         # text 만 사용하는 것과 같은 효과
         if self.ignore_wav:
-            logits: Tensor = self.header_model(text_feature)
+            header_model_input = {
+                "text_vec": text_feature,
+                "text_vec_mask": text_attention_mask.to(torch.bool),
+            }
+
+            logits: Tensor = self.header_model(**header_model_input)
 
         else:
             bsz, _ = text_input_ids.shape[0], text_input_ids.shape[1]

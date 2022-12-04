@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 def get_args(pred_config):
+    if not os.path.exists(pred_config.model_arg_path):
+        raise Exception("Model arg doesn't exists!")
+
     return torch.load(pred_config.model_arg_path)
 
 

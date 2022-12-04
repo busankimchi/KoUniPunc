@@ -25,6 +25,8 @@ $ python3 -m src.dataset.data_aggregation
 Fine tune the model using aggregated data.
 
 **Flags**
+- `--ignore_wav` : Ignore wave signal. This utlizes only the text features
+
 - `--log_prefix` : Log prefix
 
 - `--amp` : Enable fp16 precisions
