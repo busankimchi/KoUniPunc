@@ -7,7 +7,12 @@ import logging
 import torch
 
 from ...inference.utils import restore_punctuation_by_line
-from ...inference.e2e import load_audio, asr_process, punc_process
+from ...inference.e2e import (
+    cleanup_transcription,
+    load_audio,
+    asr_process,
+    punc_process,
+)
 from ...utils import get_device
 from .config import MODEL_CKPT_PATH, MODEL_ARG_PATH
 from ...model.ko_unipunc import KoUniPunc
@@ -44,10 +49,10 @@ def e2e_inference(input_audio_file: str) -> str:
 
     speech_array = load_audio(input_audio_file)
     transcription = asr_process(speech_array, device)
-    # transcription = cleanup_transcription(transcription)
+    words = cleanup_transcription(transcription)
 
     model = load_punc_model(args, device)
-    pred_list = punc_process(args, transcription, speech_array, model)
+    pred_list = punc_process(args, device, words, input_audio_file, model)
 
-    line = restore_punctuation_by_line(transcription, pred_list)
+    line = restore_punctuation_by_line(words, pred_list)
     return line

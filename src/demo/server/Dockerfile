@@ -33,16 +33,16 @@ RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86
     rm ~/miniconda.sh && \
     /opt/conda/bin/conda clean -tipsy && \
     ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
-    echo ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc &&
+    echo ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc
 
 # copy all necessary files
 COPY . .
 
 RUN /bin/bash -c "conda env create --file env.yaml"
 RUN echo "conda activate punc-venv" >> ~/.bashrc
-RUN /bin/bash -c "source activate punc-venv" 
+RUN /bin/bash -c "conda activate punc-venv"
 
-RUN chmod +x /server/entrypoint_server.sh
+RUN chmod +x /server/src/demo/server/entrypoint_server.sh
 EXPOSE 8080
 
 ENTRYPOINT [ "sh", "/server/entrypoint_server.sh" ]

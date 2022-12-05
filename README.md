@@ -49,6 +49,12 @@ Inference using the trained model and the aggregated test data.
 $ python3 -m src.inference.main
 ```
 
+## End-to-end Inference
+End-to-end inference using the trained model and a single audio file.
+```
+$ python3 -m src.inference.e2e
+```
+
 ## Demo
 This project includes a demo using streamlit.
 

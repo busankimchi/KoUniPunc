@@ -11,8 +11,11 @@ import torch
 from torch import Tensor
 import torch.nn.functional as F
 import torchaudio
+from torch.utils.data import DataLoader, SequentialSampler
 from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
 
+from ..dataset.utils import clean_sentence
+from ..dataset.welfare_call_dataset import InputFeature, WelfareCallDataset
 from ..model.ko_unipunc import KoUniPunc
 from .utils import (
     get_args,
@@ -46,7 +49,8 @@ def asr_process(speech_array: Tensor, device) -> str:
     inputs = processor(
         speech_array, sampling_rate=16000, return_tensors="pt", padding="longest"
     )
-    input_values: Tensor = inputs.input_values.to(device)
+
+    input_values: Tensor = inputs.input_values.view(1, -1).to(device)
     # attention_mask = inputs.attention_mask.to(device)
 
     with torch.no_grad():
@@ -56,15 +60,17 @@ def asr_process(speech_array: Tensor, device) -> str:
     predicted_ids = torch.argmax(logits, dim=-1)
     transcription = processor.batch_decode(predicted_ids)
 
-    return transcription
+    return transcription[0]
 
 
-def cleanup_transcription(transcription):
-    return transcription
+def cleanup_transcription(transcription: str):
+    transcription = clean_sentence(transcription)
+
+    return transcription.split()
 
 
 def convert_to_dataset(
-    args, pad_token_label_id: int, transcription: str, speech_array: Tensor
+    args, pad_token_label_id: int, transcription: str, audio_path: str
 ):
     tokenizer = load_tokenizer(args)
 
@@ -75,88 +81,95 @@ def convert_to_dataset(
         slot_label_mask,
     ) = convert_text_to_features(transcription, args, tokenizer, pad_token_label_id)
 
-    audio_input = speech_array[0]
-    audio_length = len(audio_input)
-
-    padding_length = args.max_aud_len - audio_length
-    if padding_length > 0:
-        audio_input = F.pad(
-            audio_input, pad=(0, padding_length), mode="constant", value=0
+    features = [
+        InputFeature(
+            text_input_ids=input_ids,
+            text_attention_mask=attention_mask,
+            text_token_type_ids=token_type_ids,
+            labels=slot_label_mask,
+            audio_path=audio_path,
         )
+    ]
 
-    return (
-        torch.tensor(input_ids, dtype=torch.long),
-        torch.tensor(attention_mask, dtype=torch.long),
-        torch.tensor(token_type_ids, dtype=torch.long),
-        audio_input,
-        torch.tensor(audio_length, dtype=torch.long),
-        True,
-        np.array(slot_label_mask),
-    )
+    return WelfareCallDataset(args, features)
 
 
 def punc_process(
-    args, transcription: str, speech_array: Tensor, model: KoUniPunc
+    args, device, transcription: str, audio_path: str, model: KoUniPunc
 ) -> List[str]:
     label_lst = PUNCTUATION_LABELS
     pad_token_label_id = torch.nn.CrossEntropyLoss().ignore_index
 
-    (
-        text_input_ids,
-        text_attention_mask,
-        text_token_type_ids,
-        audio_input,
-        audio_length,
-        has_audio,
-        slot_label_mask,
-    ) = convert_to_dataset(args, pad_token_label_id, transcription, speech_array)
+    dataset = convert_to_dataset(args, pad_token_label_id, transcription, audio_path)
 
-    with torch.no_grad():
-        inputs = {
-            "text_input_ids": text_input_ids,
-            "text_attention_mask": text_attention_mask,
-            "text_token_type_ids": text_token_type_ids,
-            "audio_input": audio_input,
-            "audio_length": audio_length,
-            "has_audio": has_audio,
-        }
-        logits: Tensor = model(**inputs)
-        preds = logits.detach().cpu().numpy()
+    sampler = SequentialSampler(dataset)
+    data_loader = DataLoader(dataset, sampler=sampler, batch_size=1)
 
-    preds: np.ndarray = np.argmax(preds)
+    all_slot_label_mask, preds = None, None
+
+    for batch in data_loader:
+        batch = tuple(t.to(device) for t in batch)
+        with torch.no_grad():
+            inputs = {
+                "text_input_ids": batch[0],
+                "text_attention_mask": batch[1],
+                "text_token_type_ids": batch[2],
+                "audio_input": batch[3],
+                "audio_length": batch[4],
+                "has_audio": batch[5],
+            }
+
+            logits: Tensor = model(**inputs)
+            slot_label_mask: Tensor = batch[6]
+
+            if preds is None:
+                preds = logits.detach().cpu().numpy()
+                all_slot_label_mask = slot_label_mask.detach().cpu().numpy()
+
+            else:
+                preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
+                all_slot_label_mask = np.append(
+                    all_slot_label_mask, slot_label_mask.detach().cpu().numpy(), axis=0
+                )
+
+    preds: np.ndarray = np.argmax(preds, axis=2)
     slot_label_map = {i: label for i, label in enumerate(label_lst)}
-    pred_list = []
+    preds_list = [[] for _ in range(preds.shape[0])]
 
     for i in range(preds.shape[0]):
-        if slot_label_mask[i] != pad_token_label_id:
-            pred_list.append(slot_label_map[preds[i]])
+        for j in range(preds.shape[1]):
+            if all_slot_label_mask[i, j] != pad_token_label_id:
+                preds_list[i].append(slot_label_map[preds[i][j]])
 
-    return pred_list
+    return preds_list[0]
 
 
-def save_output_file(pred_config, transcription, pred_list):
+def save_output_file(pred_config, transcription: str, pred_list: list):
     filename, _ = os.path.splitext(pred_config.input_audio_file)
 
     with open(f"{filename}_out.txt", "w", encoding="utf-8") as f:
         line = restore_punctuation_by_line(transcription, pred_list)
-        f.write(f"{line}\n")
-
-        return line
+        f.write(line)
 
 
 def e2e(pred_config):
     args = get_args(pred_config)
+    logger.info(args)
+
     device = get_device(args)
 
     speech_array = load_audio(pred_config.input_audio_file)
     transcription = asr_process(speech_array, device)
-    # transcription = cleanup_transcription(transcription)
+    words = cleanup_transcription(transcription)
+    logger.info(f"TRANSCRIPT ::: {words}")
 
     model = load_model(pred_config, args, device)
-    pred_list = punc_process(args, transcription, speech_array, model)
+    pred_list = punc_process(args, device, words, pred_config.input_audio_file, model)
+
+    logger.info(f"PRED LIST :: {pred_list}")
 
     # Write to output file
-    save_output_file(pred_config, transcription, pred_list)
+    save_output_file(pred_config, words, pred_list)
 
 
 if __name__ == "__main__":
@@ -166,7 +179,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--input_audio_file",
-        default=None,
+        default="/mnt/storage/sample/SAMPLE3.m4a",
         type=str,
         help="Input file for e2e prediction",
     )
@@ -189,7 +202,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--output_dir",
-        default="/mnt/storage/kounipunc/e2e",
+        default="/mnt/storage/e2e_output",
         type=str,
         help="Output dir for e2e prediction",
     )

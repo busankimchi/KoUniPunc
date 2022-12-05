@@ -6,8 +6,6 @@ RUN apt-get update
 COPY requirements.txt /client/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN apt install -y default-jre
-
 COPY . .
 
 RUN chmod +x /client/entrypoint_client.sh

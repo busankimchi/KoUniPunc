@@ -1,5 +1,7 @@
 # Demo for KoUniPunc
 
+A dockerized KoUniPunc FastAPI server
+
 ## Requirements
 
 - docker

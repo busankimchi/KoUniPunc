@@ -4,8 +4,8 @@ services:
   server:
     container_name: server
     build:
-      context: ../
-      dockerfile: demo/server/Dockerfile
+      context: ../../
+      dockerfile: src/demo/server/Dockerfile
 
     image: tebahsoft/kounipunc-backend
     ports:
