@@ -3,18 +3,19 @@ End-to-End process
 """
 import os
 import logging
+import requests
 
 import torch
 
 from ...inference.utils import restore_punctuation_by_line
-from ...inference.e2e import (
-    cleanup_transcription,
-    load_audio,
-    asr_process,
-    punc_process,
-)
+from ...inference.e2e import cleanup_transcription, punc_process
 from ...utils import get_device
-from .config import MODEL_CKPT_PATH, MODEL_ARG_PATH
+from .config import (
+    MODEL_CKPT_PATH,
+    MODEL_ARG_PATH,
+    NCP_CSR_CLIENT_ID,
+    NCP_CSR_CLIENT_SECRET,
+)
 from ...model.ko_unipunc import KoUniPunc
 
 
@@ -43,12 +44,27 @@ def load_punc_model(args, device) -> KoUniPunc:
     return model
 
 
-def e2e_inference(input_audio_file: str) -> str:
+def asr_process(input_audio_file) -> str:
+    url = f"https://naveropenapi.apigw.ntruss.com/recog/v1/stt?lang=Kor"
+    headers = {
+        "X-NCP-APIGW-API-KEY-ID": NCP_CSR_CLIENT_ID,
+        "X-NCP-APIGW-API-KEY": NCP_CSR_CLIENT_SECRET,
+        "Content-Type": "application/octet-stream",
+    }
+    response = requests.post(url, data=open(input_audio_file, "rb"), headers=headers)
+
+    if response.status_code == 200:
+        return response["text"]
+
+    else:
+        raise Exception("Request error!")
+
+
+def e2e_inference(input_audio_file) -> str:
     args = torch.load(MODEL_ARG_PATH)
     device = get_device(args)
 
-    speech_array = load_audio(input_audio_file)
-    transcription = asr_process(speech_array, device)
+    transcription = asr_process(input_audio_file)
     words = cleanup_transcription(transcription)
 
     model = load_punc_model(args, device)

@@ -41,8 +41,8 @@ def load_audio(input_audio: str) -> Tensor:
 
 
 def asr_process(speech_array: Tensor, device) -> str:
-    processor = Wav2Vec2Processor.from_pretrained("kresnik/wav2vec2-large-xlsr-korean")
-    model = Wav2Vec2ForCTC.from_pretrained("kresnik/wav2vec2-large-xlsr-korean").to(
+    processor = Wav2Vec2Processor.from_pretrained("w11wo/wav2vec2-xls-r-300m-korean")
+    model = Wav2Vec2ForCTC.from_pretrained("w11wo/wav2vec2-xls-r-300m-korean").to(
         device
     )
 
@@ -165,7 +165,6 @@ def e2e(pred_config):
 
     model = load_model(pred_config, args, device)
     pred_list = punc_process(args, device, words, pred_config.input_audio_file, model)
-
     logger.info(f"PRED LIST :: {pred_list}")
 
     # Write to output file
