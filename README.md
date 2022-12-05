@@ -17,7 +17,7 @@ $ conda env create --file env.yaml
 ## Data aggregation/preprocessing
 Makes two files, `train.jsonl` and `dev.jsonl`, from raw sparsed datas.
 ```
-$ python3 -m src.dataset.data_aggregation
+$ python3 -m dataset.data_aggregation
 ```
 
 
@@ -34,31 +34,27 @@ Fine tune the model using aggregated data.
 - `--parallel` : Enable parallel computing for multi-GPUs
 
 ```
-$ python3 -m src.train.main --do_train --do_eval --write_pred --report_as_file --amp --parallel --use_virtual --log_prefix 221129_debug_metric_6 
+$ python3 -m train.main --do_train --do_eval --write_pred --report_as_file --amp --parallel --use_virtual --log_prefix 221205_debug
 ```
 
-## Test Data aggregation
-Aggergate test data to fit into the trained model.
-```
-$ python3 -m src.dataset.test_data_aggregation
-```
 
 ## Inference
 Inference using the trained model and the aggregated test data.
 ```
-$ python3 -m src.inference.main
+$ python3 -m inference.main
 ```
 
 ## End-to-end Inference
 End-to-end inference using the trained model and a single audio file.
 ```
-$ python3 -m src.inference.e2e
+$ python3 -m inference.e2e
 ```
 
 ## Demo
 This project includes a demo using streamlit.
-
-Please refer to [DEMO.md]()
+```
+$ streamlit run main.py
+```
 
 
 # Results

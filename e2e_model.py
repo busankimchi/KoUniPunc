@@ -5,19 +5,24 @@ import os
 import logging
 import requests
 
+from dotenv import load_dotenv
+
 import torch
 
-from ...inference.utils import restore_punctuation_by_line
-from ...inference.e2e import cleanup_transcription, punc_process
-from ...utils import get_device
-from .config import (
-    MODEL_CKPT_PATH,
-    MODEL_ARG_PATH,
-    NCP_CSR_CLIENT_ID,
-    NCP_CSR_CLIENT_SECRET,
-)
-from ...model.ko_unipunc import KoUniPunc
+from inference.inference_utils import restore_punctuation_by_line
+from inference.e2e import cleanup_transcription, punc_process
+from utils.utils import get_device
+from model.ko_unipunc import KoUniPunc
 
+
+load_dotenv(verbose=True)
+
+
+MODEL_CKPT_PATH = os.environ.get("MODEL_CKPT_PATH")
+MODEL_ARG_PATH = os.environ.get("MODEL_ARG_PATH")
+
+NCP_CSR_CLIENT_ID = os.environ.get("NCP_CSR_CLIENT_ID")
+NCP_CSR_CLIENT_SECRET = os.environ.get("NCP_CSR_CLIENT_SECRET")
 
 logger = logging.getLogger(__name__)
 
@@ -51,24 +56,39 @@ def asr_process(input_audio_file) -> str:
         "X-NCP-APIGW-API-KEY": NCP_CSR_CLIENT_SECRET,
         "Content-Type": "application/octet-stream",
     }
-    response = requests.post(url, data=open(input_audio_file, "rb"), headers=headers)
+    response = requests.post(url, data=input_audio_file, headers=headers)
+    res = response.json()
 
     if response.status_code == 200:
-        return response["text"]
+        return res["text"]
 
     else:
         raise Exception("Request error!")
 
 
-def e2e_inference(input_audio_file) -> str:
+def e2e_inference(raw_audio) -> str:
     args = torch.load(MODEL_ARG_PATH)
     device = get_device(args)
 
-    transcription = asr_process(input_audio_file)
+    logger.info(args)
+
+    transcription = asr_process(raw_audio.getvalue())
     words = cleanup_transcription(transcription)
+    logger.info(f"TRANSCRIPT :: {words}")
 
     model = load_punc_model(args, device)
-    pred_list = punc_process(args, device, words, input_audio_file, model)
+
+    temp_audio_file_path = f"./temp/{raw_audio.name}"
+    with open(temp_audio_file_path, "wb") as f:
+        f.write(raw_audio.getvalue())
+        f.close()
+
+    pred_list = punc_process(args, device, words, temp_audio_file_path, model)
+    logger.info(f"PRED LIST :: {pred_list}")
 
     line = restore_punctuation_by_line(words, pred_list)
+
+    os.remove(temp_audio_file_path)
+    logger.info(f"** Inference End **")
+
     return line

@@ -10,7 +10,7 @@ from tqdm import tqdm
 import torch
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from ..utils import load_tokenizer
+from utils.utils import load_tokenizer
 from .welfare_call import InputExample, WelfareCallDatasetProcessor
 from .welfare_call_dataset import InputFeature, WelfareCallDataset
 

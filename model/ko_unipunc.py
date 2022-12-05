@@ -10,7 +10,7 @@ import torch.nn as nn
 
 from .conv_1d_subsampler import Conv1dSubsampler
 from .transformer_fusion_headers import TransformerFusionHeaders
-from ..utils import (
+from utils.utils import (
     PUNCTUATION_LABELS,
     W2V_DIM,
     LM_MODEL_CLASSES,

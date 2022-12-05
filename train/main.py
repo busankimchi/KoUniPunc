@@ -4,14 +4,15 @@ Training Entry file
 import argparse
 
 from .trainer import Trainer
-from ..dataset.data_loader import cache_and_load_features
-from ..dataset.data_aggregation import DATA_BASE_PATH
-from ..utils import init_logger, set_seed
-from ..utils import (
+from dataset.data_loader import cache_and_load_features
+from dataset.data_aggregation import DATA_BASE_PATH
+from utils.utils import (
     LM_MODEL_CLASSES,
     LM_MODEL_PATH_MAP,
     SM_MODEL_CLASSES,
     SM_MODEL_PATH_MAP,
+    init_logger,
+    set_seed,
 )
 
 

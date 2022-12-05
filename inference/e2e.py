@@ -5,6 +5,7 @@ import os
 from typing import List
 import logging
 import argparse
+import requests
 
 import numpy as np
 import torch
@@ -12,21 +13,24 @@ from torch import Tensor
 import torch.nn.functional as F
 import torchaudio
 from torch.utils.data import DataLoader, SequentialSampler
-from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
 
-from ..dataset.utils import clean_sentence
-from ..dataset.welfare_call_dataset import InputFeature, WelfareCallDataset
-from ..model.ko_unipunc import KoUniPunc
-from .utils import (
+from dataset.dataset_utils import clean_sentence
+from dataset.welfare_call_dataset import InputFeature, WelfareCallDataset
+from model.ko_unipunc import KoUniPunc
+from .inference_utils import (
     get_args,
     load_model,
     restore_punctuation_by_line,
     convert_text_to_features,
 )
-from ..utils import PUNCTUATION_LABELS, get_device, init_logger, load_tokenizer
+from utils.utils import PUNCTUATION_LABELS, get_device, init_logger, load_tokenizer
 
 
 logger = logging.getLogger(__name__)
+
+
+NCP_CSR_CLIENT_ID = "h5v00vuac1"
+NCP_CSR_CLIENT_SECRET = "C4FhB6PXzGLG2oRccMe49iT3Y2t6O3noJdjn76W3"
 
 
 def load_audio(input_audio: str) -> Tensor:
@@ -40,27 +44,21 @@ def load_audio(input_audio: str) -> Tensor:
     return speech_array
 
 
-def asr_process(speech_array: Tensor, device) -> str:
-    processor = Wav2Vec2Processor.from_pretrained("w11wo/wav2vec2-xls-r-300m-korean")
-    model = Wav2Vec2ForCTC.from_pretrained("w11wo/wav2vec2-xls-r-300m-korean").to(
-        device
-    )
+def asr_process(input_audio_file) -> str:
+    url = f"https://naveropenapi.apigw.ntruss.com/recog/v1/stt?lang=Kor"
+    headers = {
+        "X-NCP-APIGW-API-KEY-ID": NCP_CSR_CLIENT_ID,
+        "X-NCP-APIGW-API-KEY": NCP_CSR_CLIENT_SECRET,
+        "Content-Type": "application/octet-stream",
+    }
+    response = requests.post(url, data=open(input_audio_file, "rb"), headers=headers)
+    res = response.json()
 
-    inputs = processor(
-        speech_array, sampling_rate=16000, return_tensors="pt", padding="longest"
-    )
+    if response.status_code == 200:
+        return res["text"]
 
-    input_values: Tensor = inputs.input_values.view(1, -1).to(device)
-    # attention_mask = inputs.attention_mask.to(device)
-
-    with torch.no_grad():
-        # logits = model(input_values, attention_mask=attention_mask).logits
-        logits: Tensor = model(input_values).logits
-
-    predicted_ids = torch.argmax(logits, dim=-1)
-    transcription = processor.batch_decode(predicted_ids)
-
-    return transcription[0]
+    else:
+        raise Exception("Request error!")
 
 
 def cleanup_transcription(transcription: str):
@@ -95,7 +93,7 @@ def convert_to_dataset(
 
 
 def punc_process(
-    args, device, transcription: str, audio_path: str, model: KoUniPunc
+    args, device, transcription: str, audio_path, model: KoUniPunc
 ) -> List[str]:
     label_lst = PUNCTUATION_LABELS
     pad_token_label_id = torch.nn.CrossEntropyLoss().ignore_index
@@ -158,8 +156,7 @@ def e2e(pred_config):
 
     device = get_device(args)
 
-    speech_array = load_audio(pred_config.input_audio_file)
-    transcription = asr_process(speech_array, device)
+    transcription = asr_process(pred_config.input_audio_file)
     words = cleanup_transcription(transcription)
     logger.info(f"TRANSCRIPT ::: {words}")
 
@@ -178,7 +175,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--input_audio_file",
-        default="/mnt/storage/sample/SAMPLE3.m4a",
+        default="/mnt/storage/sample/SAMPLE1.m4a",
         type=str,
         help="Input file for e2e prediction",
     )

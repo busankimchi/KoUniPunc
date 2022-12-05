@@ -10,16 +10,16 @@ import torch
 from torch import Tensor
 from torch.utils.data import DataLoader, SequentialSampler
 
-from ..dataset.welfare_call_dataset import InputFeature, WelfareCallDataset
+from dataset.welfare_call_dataset import InputFeature, WelfareCallDataset
 
-from .utils import (
+from .inference_utils import (
     convert_text_to_features,
     get_args,
     load_model,
     read_input_file,
     save_output_file,
 )
-from ..utils import init_logger, load_tokenizer, get_device, PUNCTUATION_LABELS
+from utils.utils import init_logger, load_tokenizer, get_device, PUNCTUATION_LABELS
 
 logger = logging.getLogger(__name__)
 

@@ -18,7 +18,7 @@ from torch.cuda.amp import GradScaler, autocast
 from torch.optim import AdamW
 from transformers import get_linear_schedule_with_warmup
 
-from ..utils import (
+from utils.utils import (
     PUNCTUATION_LABELS,
     get_device,
     compute_metrics,
@@ -26,7 +26,7 @@ from ..utils import (
     get_eval_texts,
 )
 
-from ..model.ko_unipunc import KoUniPunc
+from model.ko_unipunc import KoUniPunc
 
 logger = logging.getLogger(__name__)
 

@@ -22,6 +22,7 @@ class InputFeature:
 
     audio_path: Optional[str] = None
 
+
 class WelfareCallDataset(Dataset):
     def __init__(self, args, features: List[InputFeature]):
         self.args = args
@@ -46,6 +47,7 @@ class WelfareCallDataset(Dataset):
         has_audio, audio_input, audio_length = False, None, 0
         if feature.audio_path is not None:
             has_audio = True
+
             speech_array, sampling_rate = torchaudio.load(feature.audio_path)
 
             if self.args.wav_sampling_rate != sampling_rate:

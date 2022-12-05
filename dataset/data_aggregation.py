@@ -10,8 +10,8 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from .utils import clean_sentence, detect_punctuation, remove_unwanted_punc
-from ..utils import init_logger
+from .dataset_utils import clean_sentence, detect_punctuation, remove_unwanted_punc
+from utils.utils import init_logger
 
 logger = logging.getLogger(__name__)
 

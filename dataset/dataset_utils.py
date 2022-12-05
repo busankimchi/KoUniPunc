@@ -6,7 +6,7 @@ import unicodedata
 
 # from soynlp.normalizer import emoticon_normalize, repeat_normalize
 
-from ..utils import PUNCTUATIONS
+from utils.utils import PUNCTUATIONS
 
 
 def _is_control(char):

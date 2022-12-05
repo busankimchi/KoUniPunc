@@ -9,8 +9,8 @@ import jsonlines
 import torch
 from transformers.tokenization_utils import PreTrainedTokenizer
 
-from ..model.ko_unipunc import KoUniPunc
-from ..utils import REVERSE_PUNCTUATIONS
+from model.ko_unipunc import KoUniPunc
+from utils.utils import REVERSE_PUNCTUATIONS
 
 
 logger = logging.getLogger(__name__)
