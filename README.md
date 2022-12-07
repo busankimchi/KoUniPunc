@@ -4,7 +4,7 @@
 
 Original code implementation is from https://github.com/Yaoming95/UniPunc.
 
-KoUniPunc restores the punctuation with a raw sentence and the corresponding audio sequence.
+KoUniPunc restores the punctuation from a raw Korean sentence and the corresponding audio sequence.
 
 
 # Installation
@@ -29,6 +29,8 @@ Fine tune the model using aggregated data.
 
 **Flags**
 - `--ignore_wav` : Ignore audio features. This utlizes only the text features.
+
+- `--use_virtual` : Use virtual embedding.
 
 - `--log_prefix` : Log prefix
 
