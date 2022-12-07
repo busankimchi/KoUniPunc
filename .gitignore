@@ -1,6 +1,6 @@
 .DS_Store
 
-data/base/
+data/
 
 pretrained_models/
 
@@ -20,3 +20,6 @@ sample_pred_punc_out.txt
 archive/
 temp/
 test_data/
+kounipunc/
+
+.env

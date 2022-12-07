@@ -17,32 +17,45 @@ $ conda env create --file env.yaml
 ## Data aggregation/preprocessing
 Makes two files, `train.jsonl` and `dev.jsonl`, from raw sparsed datas.
 ```
-$ python3 -m src.dataset.data_aggregation
+$ python3 -m dataset.data_aggregation
 ```
 
 
 ## Finetune
 Fine tune the model using aggregated data.
-```
-$ python3 -m src.train.main --do_train --do_eval --write_pred --report_as_file --log_prefix 221128_debug
-```
+
+**Flags**
+- `--ignore_wav` : Ignore wave signal. This utlizes only the text features
+
+- `--log_prefix` : Log prefix
+
+- `--amp` : Enable fp16 precisions
+
+- `--parallel` : Enable parallel computing for multi-GPUs
 
 ```
-$ python3 -m src.train.main --do_train --do_eval --write_pred --report_as_file --log_prefix 221128_debug
+$ python3 -m train.main --do_train --do_eval --write_pred --report_as_file --amp --parallel --use_virtual --log_prefix 221205_debug
 ```
 
-## Test Data aggregation
-Aggergate test data to fit into the trained model.
-```
-$ python3 -m src.dataset.test_data_aggregation
-```
 
 ## Inference
 Inference using the trained model and the aggregated test data.
 ```
-$ python3 -m src.inference.main
+$ python3 -m inference.main
+```
+
+## End-to-end Inference
+End-to-end inference using the trained model and a single audio file.
+```
+$ python3 -m inference.e2e
+```
+
+## Demo
+This project includes a demo using streamlit.
+```
+$ streamlit run demo.py
 ```
 
 
-# Results
-- TBD
+# Dataset
+[AI Hub 복지 분야 콜센터 상담데이터](https://www.aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn=470)

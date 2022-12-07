@@ -8,7 +8,7 @@ import logging
 
 import jsonlines
 
-from ..utils import PUNCTUATION_LABELS
+from utils.utils import PUNCTUATION_LABELS
 
 
 logger = logging.getLogger(__name__)

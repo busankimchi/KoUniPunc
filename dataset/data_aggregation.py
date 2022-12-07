@@ -7,14 +7,15 @@ import argparse
 import json
 import logging
 from pathlib import Path
+
 from tqdm import tqdm
 
-from .utils import clean_sentence, detect_punctuation, remove_unwanted_punc
-from ..utils import init_logger
+from .dataset_utils import clean_sentence, detect_punctuation, remove_unwanted_punc
+from utils.utils import init_logger
 
 logger = logging.getLogger(__name__)
 
-DATA_BASE_PATH = "/mnt/data_storage/186.복지 분야 콜센터 상담데이터"
+DATA_BASE_PATH = "/mnt/storage/186.복지 분야 콜센터 상담데이터"
 TRAIN_BASE_PATH = f"{DATA_BASE_PATH}/01.데이터/1.Training"
 DEV_BASE_PATH = f"{DATA_BASE_PATH}/01.데이터/2.Validation"
 
@@ -31,9 +32,7 @@ def traverse_dir(rootpath: str):
             if ext in [".json"]:
                 file_paths.append((key, file_path))
 
-    file_paths = sorted(file_paths, key=lambda tup: tup[0])
-
-    return file_paths
+    return sorted(file_paths, key=lambda tup: tup[0])
 
 
 def generate_label(origin_text: str):
@@ -51,13 +50,12 @@ def generate_label(origin_text: str):
 
     assert len(punc_seq) == len(no_punc_word_seq)
 
-    text, label = " ".join(no_punc_word_seq), " ".join(punc_seq)
-    return text, label
+    return " ".join(no_punc_word_seq), " ".join(punc_seq)
 
 
 def process_files(paths: list, mode: str):
-    aggregated_datas = []
-    aggregated_labels = []
+    aggregated_datas, aggregated_labels = [], []
+
     for key, label_path in tqdm(paths, desc="Aggregation"):
         with open(label_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -66,8 +64,6 @@ def process_files(paths: list, mode: str):
             audio_path = data["dialogs"][0]["audioPath"]
             metadata = data["info"][0]["metadata"]
 
-            # print(f"before : {audio_path}")
-
             audio_path = re.sub("\\\\", "/", audio_path)
             audio_path = re.sub("^Y:", f"{DATA_BASE_PATH}/01.데이터", audio_path)
 
@@ -75,8 +71,6 @@ def process_files(paths: list, mode: str):
                 audio_path = re.sub("03.원천데이터", "1.Training/원천데이터", audio_path)
             elif mode == "dev":
                 audio_path = re.sub("03.원천데이터", "2.Validation/원천데이터", audio_path)
-
-            # print(f"after : {audio_path}")
 
             if not os.path.exists(audio_path):
                 continue
@@ -106,19 +100,19 @@ def save_jsonl(datas, labels, mode: str):
             f.write("\n")
 
 
-def aggregator(args):
+def aggregator(mode: str, data_dir: str):
+    data_paths = traverse_dir(data_dir)
+    agg_train_datas, agg_train_labels = process_files(data_paths, mode)
+
+    save_jsonl(agg_train_datas, agg_train_labels, mode)
+
+
+def data_aggregation(args):
     init_logger()
 
-    train_paths = traverse_dir(args.train_data_dir)
-    agg_train_datas, agg_train_labels = process_files(train_paths, "train")
-
-    dev_paths = traverse_dir(args.dev_data_dir)
-    agg_dev_datas, agg_dev_labels = process_files(dev_paths, "dev")
-    
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
-    
-    save_jsonl(agg_train_datas, agg_train_labels, "train")
-    save_jsonl(agg_dev_datas, agg_dev_labels, "dev")
+    aggregator("train", args.train_data_dir)
+    aggregator("dev", args.dev_data_dir)
 
 
 if __name__ == "__main__":
@@ -140,4 +134,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    aggregator(args)
+    data_aggregation(args)
