@@ -64,8 +64,6 @@ def process_files(paths: list, mode: str):
             audio_path = data["dialogs"][0]["audioPath"]
             metadata = data["info"][0]["metadata"]
 
-            # print(f"before : {audio_path}")
-
             audio_path = re.sub("\\\\", "/", audio_path)
             audio_path = re.sub("^Y:", f"{DATA_BASE_PATH}/01.데이터", audio_path)
 
@@ -73,8 +71,6 @@ def process_files(paths: list, mode: str):
                 audio_path = re.sub("03.원천데이터", "1.Training/원천데이터", audio_path)
             elif mode == "dev":
                 audio_path = re.sub("03.원천데이터", "2.Validation/원천데이터", audio_path)
-
-            # print(f"after : {audio_path}")
 
             if not os.path.exists(audio_path):
                 continue

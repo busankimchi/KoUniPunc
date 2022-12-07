@@ -4,16 +4,11 @@ Data loader utils
 import re
 import unicodedata
 
-# from soynlp.normalizer import emoticon_normalize, repeat_normalize
-
 from utils.utils import PUNCTUATIONS
 
 
 def _is_control(char):
     """Checks whether `char` is a control character."""
-    # (Code from Huggingface Transformers)
-    # These are technically control characters but we count them as whitespace
-    # characters.
     if char == "\t" or char == "\n" or char == "\r":
         return False
     cat = unicodedata.category(char)
@@ -44,35 +39,6 @@ def clean_sentence(sentence, remove_control=True):
 
     return " ".join(sentence.strip().split())
 
-
-# def preprocess(title: str, comment: str):
-#     # Erase redundant \" in the start & end of the title
-#     if title.startswith('"'):
-#         title = title[1:]
-#     if title.endswith('"'):
-#         title = title[:-1]
-
-#     # Change quotes
-#     title = (
-#         title.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
-#     )
-
-#     # Erase braces in title
-#     braces = r"\[(.*?)\]"
-#     braces2 = r"\{(.*?)\}"
-#     braces3 = r"\【(.*?)\】"
-#     braces4 = r"\<(.*?)\>"
-
-#     title = re.sub(braces, "", title)
-#     title = re.sub(braces2, "", title)
-#     title = re.sub(braces3, "", title)
-#     title = re.sub(braces4, "", title)
-
-#     # Normalize the comment
-#     comment = emoticon_normalize(comment, num_repeats=3)
-#     comment = repeat_normalize(comment, num_repeats=3)
-
-#     return title, comment
 
 
 def remove_unwanted_punc(line: str):
