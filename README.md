@@ -4,6 +4,9 @@
 
 Original code implementation is from https://github.com/Yaoming95/UniPunc.
 
+KoUniPunc restores the punctuation with a raw sentence and the corresponding audio sequence.
+
+
 # Installation
 
 ## Conda env setting
@@ -25,13 +28,13 @@ $ python3 -m dataset.data_aggregation
 Fine tune the model using aggregated data.
 
 **Flags**
-- `--ignore_wav` : Ignore wave signal. This utlizes only the text features
+- `--ignore_wav` : Ignore audio features. This utlizes only the text features.
 
 - `--log_prefix` : Log prefix
 
-- `--amp` : Enable fp16 precisions
+- `--amp` : Enable fp16 precisions.
 
-- `--parallel` : Enable parallel computing for multi-GPUs
+- `--parallel` : Enable parallel computing for multi-GPUs.
 
 ```
 $ python3 -m train.main --do_train --do_eval --write_pred --report_as_file --amp --parallel --use_virtual --log_prefix 221205_debug
@@ -52,6 +55,8 @@ $ python3 -m inference.e2e
 
 ## Demo
 This project includes a demo using streamlit.
+
+This demo utilizes an external asr component (NAVER CLOVA) to extract accurate transcript.
 ```
 $ streamlit run demo.py
 ```
